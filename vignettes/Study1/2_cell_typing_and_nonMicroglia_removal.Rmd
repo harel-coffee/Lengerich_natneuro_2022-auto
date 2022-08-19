@@ -22,7 +22,7 @@ lapply(libraries, library, character.only=T)
 # Dimensionality reduction
 ```{r}
 # read in the integrated object from the prior vignette
-object <- readRDS("~/atvTrem2_combined_objects/NGS000072_integrated.Rds")
+object <- readRDS("~/Study1_integrated.Rds")
 
 # Make sure we're working off of the integrated RNA assay for these steps
 DefaultAssay(object) <- "integrated"
@@ -64,11 +64,11 @@ markers <- FindAllMarkers(object)
 
 future::plan("sequential")
 
-write.csv(markers, "~/atvTrem2_combined_scRNAseq/inst/extdata/NGS000072_cluster_markers.csv")
+write.csv(markers, "~/inst/extdata/Study1_cluster_markers.csv")
 ```
 
 ```{r}
-markers <- read.csv("~/atvTrem2_combined_scRNAseq/inst/extdata/NGS000072_cluster_markers.csv", row.names = 1, header = T)
+markers <- read.csv("~/inst/extdata/Study1_cluster_markers.csv", row.names = 1, header = T)
 
 top10 <- markers %>% group_by(cluster) %>% slice_max(n = 10, order_by = avg_log2FC)
 ```
@@ -81,7 +81,7 @@ Time to remove the apparent non-microglia populations.
 ```{r, eval=FALSE}
 microglia <- subset(object, subset = seurat_clusters %in% c(0,1,2))
 
-saveRDS(microglia, file = "~/atvTrem2_combined_objects/NGS000072_microglia.Rds")
+saveRDS(microglia, file = "~/Study1_microglia.Rds")
 ```
 
 
