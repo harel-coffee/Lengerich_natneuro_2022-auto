@@ -1,0 +1,17 @@
+sample_id,sample_name,parent_id,subject_id,description,species,sex,sample_source,sample_type,organ,region,cell_type,strain,age,age_unit,batch,genotype,treatment,treatment_dose,treatment_dose_unit,treatment_duration,treatment_duration_unit,takedown_date
+HSA-000000095,NH36G-Microglia,NH36G,Denali,Naive,Mus musculus,Male,cells,RNA,brain,Cortex and hipocampus,microglia,C57BL/6J,3.5,months,Batch 4,hTfR KI,No treatment,N/A,mg/kg,N/A,days,44028
+HSA-000000094,NH35G-Microglia,NH35G,Denali,ATV:4D9-7-Day,Mus musculus,Male,cells,RNA,brain,Cortex and hipocampus,microglia,C57BL/6J,3.5,months,Batch 4,hTfR KI,ATV:4D9,10,mg/kg,7,days,44028
+HSA-000000093,NH34G-Microglia,NH34G,Denali,ATV:RSV-1-Day,Mus musculus,Male,cells,RNA,brain,Cortex and hipocampus,microglia,C57BL/6J,3.5,months,Batch 4,hTfR KI,ATV:RSV,10,mg/kg,1,days,44028
+HSA-000000092,NH33G-Microglia,NH33G,Denali,ATV:4D9-28-Day,Mus musculus,Male,cells,RNA,brain,Cortex and hipocampus,microglia,C57BL/6J,3.5,months,Batch 4,hTfR KI,ATV:4D9,10,mg/kg,28,days,44028
+HSA-000000091,NH32G-Microglia,NH32G,Denali,ATV:4D9-14-Day,Mus musculus,Male,cells,RNA,brain,Cortex and hipocampus,microglia,C57BL/6J,3.5,months,Batch 4,hTfR KI,ATV:4D9,10,mg/kg,14,days,44028
+HSA-000000090,NH31G-Microglia,NH31G,Denali,ATV:4D9-1-Day,Mus musculus,Male,cells,RNA,brain,Cortex and hipocampus,microglia,C57BL/6J,3.5,months,Batch 4,hTfR KI,ATV:4D9,10,mg/kg,1,days,44028
+HSA-000000089,NH25G-Microglia,NH25G,Denali,ATV:4D9-28-Day,Mus musculus,Male,cells,RNA,brain,Cortex and hipocampus,microglia,C57BL/6J,3.5,months,Batch 3,hTfR KI,ATV:4D9,10,mg/kg,28,days,44027
+HSA-000000088,NH24G-Microglia,NH24G,Denali,ATV:RSV-1-Day,Mus musculus,Male,cells,RNA,brain,Cortex and hipocampus,microglia,C57BL/6J,3.5,months,Batch 3,hTfR KI,ATV:RSV,10,mg/kg,1,days,44027
+HSA-000000087,NH23G-Microglia,NH23G,Denali,ATV:4D9-14-Day,Mus musculus,Male,cells,RNA,brain,Cortex and hipocampus,microglia,C57BL/6J,3.5,months,Batch 3,hTfR KI,ATV:4D9,10,mg/kg,14,days,44027
+HSA-000000086,NH22G-Microglia,NH22G,Denali,ATV:4D9-1-Day,Mus musculus,Male,cells,RNA,brain,Cortex and hipocampus,microglia,C57BL/6J,3.5,months,Batch 3,hTfR KI,ATV:4D9,10,mg/kg,1,days,44027
+HSA-000000085,NH21G-Microglia,NH21G,Denali,ATV:4D9-7-Day,Mus musculus,Male,cells,RNA,brain,Cortex and hipocampus,microglia,C57BL/6J,3.5,months,Batch 3,hTfR KI,ATV:4D9,10,mg/kg,7,days,44027
+HSA-000000084,NH5G-Microglia,NH5G,Denali,ATV:4D9-14-Day,Mus musculus,Male,cells,RNA,brain,Cortex and hipocampus,microglia,C57BL/6J,3.5,months,Batch 1,hTfR KI,ATV:4D9,10,mg/kg,14,days,44025
+HSA-000000083,NH4G-Microglia,NH4G,Denali,ATV:4D9-7-Day,Mus musculus,Male,cells,RNA,brain,Cortex and hipocampus,microglia,C57BL/6J,3.5,months,Batch 1,hTfR KI,ATV:4D9,10,mg/kg,7,days,44025
+HSA-000000082,NH3G-Microglia,NH3G,Denali,ATV:RSV-1-Day,Mus musculus,Male,cells,RNA,brain,Cortex and hipocampus,microglia,C57BL/6J,3.5,months,Batch 1,hTfR KI,ATV:RSV,10,mg/kg,1,days,44025
+HSA-000000081,NH2G-Microglia,NH2G,Denali,ATV:4D9-1-Day,Mus musculus,Male,cells,RNA,brain,Cortex and hipocampus,microglia,C57BL/6J,3.5,months,Batch 1,hTfR KI,ATV:4D9,10,mg/kg,1,days,44025
+HSA-000000080,NH1G-Microglia,NH1G,Denali,ATV:4D9-28-Day,Mus musculus,Male,cells,RNA,brain,Cortex and hipocampus,microglia,C57BL/6J,3.5,months,Batch 1,hTfR KI,ATV:4D9,10,mg/kg,28,days,44025
