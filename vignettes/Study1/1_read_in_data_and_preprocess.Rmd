@@ -1,5 +1,5 @@
 ---
-title: "Data Pre-processing (No Cell Plex)"
+title: "Data Pre-processing"
 author: "David Tatarakis"
 date: '`r format(Sys.Date(), "%B %d, %Y")`'
 output:
@@ -21,7 +21,7 @@ libraries <- c("aws.s3", "Seurat", "Matrix", "ggplot2", "dplyr", "atvtrem2Combin
 lapply(libraries, library, character.only=T)
   
 
-meta <- read.csv("~/atvTrem2_combined_scRNAseq/inst/extdata/NGS000072_sample_metadata.csv")
+meta <- read.csv("~/inst/extdata/Study1_sample_metadata.csv")
 
 meta$sample_id <- meta$parent_id
 meta$sample_id <- plyr::mapvalues(meta$sample_id, 
@@ -44,11 +44,9 @@ samples <- c(meta$sample_id)
 
 
 objects <- lapply(samples, FUN = function(x){
-  object <- s3.read10X(bucket = 
-                         paste0("com-dnli-ngs/10x-data/NGS000072/cellranger_7.0.0/",
+  object <- Seurat::Read10X(paste0("Study1/cellranger_7.0.0/",
                                        x, 
                                        "/outs/filtered_feature_bc_matrix"),
-                       region = "us-east-1",
                        project = "atv_trem2_timecourse") # replace with your own experiment name
   object[["sample_id"]] <- x #adding sample ID
   sample_meta <- meta %>% dplyr::filter(sample_id == x) #subsetting the meta data
@@ -142,7 +140,7 @@ integrated_object <- IntegrateData(anchors)
 
 future::plan("sequential")
 # Time to save off this object, since we'll be using it in the next vignette.
-saveRDS(integrated_object, file = "~/atvTrem2_combined_objects/NGS000072_integrated.Rds")
+saveRDS(integrated_object, file = "~/Study1_integrated.Rds")
 ```
 
 
