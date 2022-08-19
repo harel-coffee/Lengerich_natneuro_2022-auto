@@ -21,18 +21,18 @@ lapply(Packages, library, character.only = TRUE)
 `%notin%` <- Negate(`%in%`)
 
 set.seed(1234)
-bucket1 <- "com.dnli.bioinfo.data/processed/internal/NGS000123/remapped"
+bucket1 <- "com.dnli.bioinfo.data/processed/internal/Study2/remapped"
 bucket2 <- "com.dnli.bioinfo.data/processed/internal/NGS000073"
 
 diss_stress <- read.csv("~/DNLI-21-236_ATV-Trem2_APPKI_timecourse/inst/extdata/diss_stress.csv", sep = ",", header = T)
 ```
 
 ```{r, include=FALSE}
-microglia_NGS73 <- aws.s3::s3readRDS(bucket = bucket2,
-                                     object = "NGS000072_microglia_subset.Rds",
+microglia_Study1 <- aws.s3::s3readRDS(bucket = bucket2,
+                                     object = "Study1_microglia_subset.Rds",
                                      region = "us-west-2")
   
-microglia_NGS123 <- aws.s3::s3readRDS(bucket = bucket1,
+microglia_Study2 <- aws.s3::s3readRDS(bucket = bucket1,
                                      object = "ATV-Trem2_APPKI_microglia_analyzed.Rds",
                                      region = "us-west-2")
 ```
@@ -40,22 +40,22 @@ microglia_NGS123 <- aws.s3::s3readRDS(bucket = bucket1,
 
 So let's take a look at both datasets.
 
-In study #1, we have now `r dim(microglia_NGS73)[2]` microglia.
+In study #1, we have now `r dim(microglia_Study1)[2]` microglia.
 
-In study #2, we have `r dim(microglia_NGS123)[2]` microglia.
+In study #2, we have `r dim(microglia_Study2)[2]` microglia.
 
 
 ```{r, echo=FALSE, fig.width=10, fig.height=4}
-DimPlot(microglia_NGS73, label=T) + DimPlot(microglia_NGS123, group.by = "seurat_clusters",label = T)
+DimPlot(microglia_Study1, label=T) + DimPlot(microglia_Study2, group.by = "seurat_clusters",label = T)
 ```
 
 And here they are split by treatment:
 ```{r, fig.width=6, fig.height=3}
-DimPlot(microglia_NGS73, split.by = "group", ncol = 3) + NoAxes()
+DimPlot(microglia_Study1, split.by = "group", ncol = 3) + NoAxes()
 ```
 
 ```{r, fig.width=5, fig.height=3}
-DimPlot(microglia_NGS123, split.by = "group", group.by = "seurat_clusters", ncol = 3) + NoAxes()
+DimPlot(microglia_Study2, split.by = "group", group.by = "seurat_clusters", ncol = 3) + NoAxes()
 ```
 
 
@@ -94,19 +94,19 @@ DimPlot(map, cols = state_colors)
 future::plan("multiprocess", workers = 6)
 options(future.globals.maxSize = 12000 * 1024^2)
 
-anchors73 <- Seurat::FindTransferAnchors(reference = map, query = microglia_NGS73)
-predictions_NGS73 <- TransferData(anchorset = anchors73, refdata = map$integrated_microglia_state)
-microglia_NGS73 <- AddMetaData(microglia_NGS73, predictions_NGS73)
+anchors73 <- Seurat::FindTransferAnchors(reference = map, query = microglia_Study1)
+predictions_Study1 <- TransferData(anchorset = anchors73, refdata = map$integrated_microglia_state)
+microglia_Study1 <- AddMetaData(microglia_Study1, predictions_Study1)
 rm(anchors73)
 
-anchors123 <- Seurat::FindTransferAnchors(reference = map, query = microglia_NGS123)
-predictions_NGS123 <- TransferData(anchorset = anchors123, refdata = map$integrated_microglia_state)
-microglia_NGS123 <- AddMetaData(microglia_NGS123, predictions_NGS123)
+anchors123 <- Seurat::FindTransferAnchors(reference = map, query = microglia_Study2)
+predictions_Study2 <- TransferData(anchorset = anchors123, refdata = map$integrated_microglia_state)
+microglia_Study2 <- AddMetaData(microglia_Study2, predictions_Study2)
 rm(anchors123)
 
 future::plan("default")
 
-microglia_NGS73$predicted.id <- factor(microglia_NGS73$predicted.id, 
+microglia_Study1$predicted.id <- factor(microglia_Study1$predicted.id, 
                                                     c("Homeostatic",
                                                       "DAM/Homeostatic",
                                                       "DAM_Indistinct",
@@ -119,7 +119,7 @@ microglia_NGS73$predicted.id <- factor(microglia_NGS73$predicted.id,
                                                        "MHCII"))
 
 
-microglia_NGS123$predicted.id <- factor(microglia_NGS123$predicted.id, 
+microglia_Study2$predicted.id <- factor(microglia_Study2$predicted.id, 
                                                     c("Homeostatic",
                                                       "DAM/Homeostatic",
                                                       "DAM_Indistinct",
@@ -134,18 +134,18 @@ microglia_NGS123$predicted.id <- factor(microglia_NGS123$predicted.id,
 ```
 
 ```{r, fig.width=14, fig.height=5}
-DimPlot(microglia_NGS73, group.by = "predicted.id",cols = state_colors) + 
-  DimPlot(microglia_NGS123, group.by = "predicted.id",cols = state_colors)
+DimPlot(microglia_Study1, group.by = "predicted.id",cols = state_colors) + 
+  DimPlot(microglia_Study2, group.by = "predicted.id",cols = state_colors)
 ```
 
 ```{r, include=FALSE}
-totals_73 <- as.data.frame((table(microglia_NGS73$predicted.id, microglia_NGS73$sample_id))) %>%
+totals_73 <- as.data.frame((table(microglia_Study1$predicted.id, microglia_Study1$sample_id))) %>%
   group_by(Var2) %>%
   mutate(percent = Freq/sum(Freq) *100)
 
 colnames(totals_73) <- c("State", "sample_id", "Count", "Percent")
 
-meta_slim <- microglia_NGS73@meta.data %>% select(c(group, treatment, sample_id)) %>% distinct(.)
+meta_slim <- microglia_Study1@meta.data %>% select(c(group, treatment, sample_id)) %>% distinct(.)
 
 totals_73 <- totals_73 %>%
   left_join(meta_slim, by = "sample_id")
@@ -163,13 +163,13 @@ ggplot(totals_73, aes(x = sample_id, y = Percent, fill = State)) +
 
 
 ```{r, include=FALSE}
-totals_123 <- as.data.frame((table(microglia_NGS123$predicted.id, microglia_NGS123$sample))) %>%
+totals_123 <- as.data.frame((table(microglia_Study2$predicted.id, microglia_Study2$sample))) %>%
   group_by(Var2) %>%
   mutate(percent = Freq/sum(Freq) *100)
 
 colnames(totals_123) <- c("State", "sample", "Count", "Percent")
 
-meta_slim <- microglia_NGS123@meta.data %>% select(c(genotype, group, treatment, sample)) %>% distinct(.)
+meta_slim <- microglia_Study2@meta.data %>% select(c(genotype, group, treatment, sample)) %>% distinct(.)
 
 totals_123 <- totals_123 %>%
   left_join(meta_slim, by = "sample")
@@ -236,10 +236,10 @@ Very similar trends in the treatment groups. Interesting to see that the additio
 
 ## Activation signatures
 ```{r, include=FALSE}
-microglia_NGS73$sample <- microglia_NGS73$sample_id
+microglia_Study1$sample <- microglia_Study1$sample_id
 
 # combine the objects so I can calculate relative sores
-combined_object <- merge(microglia_NGS73, microglia_NGS123)
+combined_object <- merge(microglia_Study1, microglia_Study2)
 
 combined_object <- combined_object %>%
   NormalizeData(.)
@@ -266,13 +266,13 @@ for (i in 1:length(chen_sigs)) {
 }
 
 for (i in 1:length(chen_sigs)) {
-  microglia_NGS73 <- AddModuleScore(microglia_NGS73, 
+  microglia_Study1 <- AddModuleScore(microglia_Study1, 
                                          features = list(chen_sigs[[i]]), 
                                          name = paste0("C.C_", names(chen_sigs)[i], "_Score"))
 }
 
 for (i in 1:length(chen_sigs)) {
-  microglia_NGS123 <- AddModuleScore(microglia_NGS123, 
+  microglia_Study2 <- AddModuleScore(microglia_Study2, 
                                          features = list(chen_sigs[[i]]), 
                                          name = paste0("C.C_", names(chen_sigs)[i], "_Score"))
 }
@@ -281,13 +281,13 @@ chen_score_names <- paste0("C.C_", names(chen_sigs), "_Score1")
 ```
 
 ```{r, echo=FALSE, fig.width=12, fig.height=6, message=FALSE}
-FeaturePlot(microglia_NGS73, features = chen_score_names, min.cutoff = 0, order = T, ncol = 3) &
+FeaturePlot(microglia_Study1, features = chen_score_names, min.cutoff = 0, order = T, ncol = 3) &
   scale_color_gradientn(colors = brewer.pal("Oranges", n = 9)) &
   NoAxes()
 ```
 
 ```{r, echo=FALSE, fig.width=12, fig.height=6, message=FALSE}
-FeaturePlot(microglia_NGS123, features = chen_score_names, min.cutoff = 0, order = T, ncol = 3) &
+FeaturePlot(microglia_Study2, features = chen_score_names, min.cutoff = 0, order = T, ncol = 3) &
   scale_color_gradientn(colors = brewer.pal("Oranges", n = 9)) &
   NoAxes()
 ```
@@ -355,13 +355,13 @@ for (i in 2:length(topics)) {
 }
 
 for (i in 2:length(topics)) {
-  microglia_NGS73 <- AddModuleScore(microglia_NGS73, 
+  microglia_Study1 <- AddModuleScore(microglia_Study1, 
                                          features = list(topics[[i]]), 
                                          name = paste0("Topics_", names(topics)[i]))
 }
 
 for (i in 2:length(topics)) {
-  microglia_NGS123 <- AddModuleScore(microglia_NGS123, 
+  microglia_Study2 <- AddModuleScore(microglia_Study2, 
                                          features = list(topics[[i]]), 
                                          name = paste0("Topics_", names(topics)[i]))
 }
@@ -370,13 +370,13 @@ topics_score_names <- paste0("Topics_", names(topics)[2:10], "1")
 ```
 
 ```{r, echo=FALSE, fig.width=12, fig.height=9, message=FALSE}
-FeaturePlot(microglia_NGS73, features = topics_score_names, min.cutoff = 0, order = T, ncol = 3) &
+FeaturePlot(microglia_Study1, features = topics_score_names, min.cutoff = 0, order = T, ncol = 3) &
   scale_color_gradientn(colors = brewer.pal("Oranges", n = 9)) &
   NoAxes()
 ```
 
 ```{r, echo=FALSE, fig.width=12, fig.height=9, message=FALSE}
-FeaturePlot(microglia_NGS123, features = topics_score_names, min.cutoff = 0, order = T, ncol = 3) &
+FeaturePlot(microglia_Study2, features = topics_score_names, min.cutoff = 0, order = T, ncol = 3) &
   scale_color_gradientn(colors = brewer.pal("Oranges", n = 9)) &
   NoAxes()
 ```
@@ -563,10 +563,10 @@ pheatmap::pheatmap(mat = topics_averages$RNA[,rownames(sample_annotation_slim)],
 ```
 
 ```{r, eval=FALSE}
-microglia_NGS123$mouse <- paste0(microglia_NGS123$group, "_",microglia_NGS123$sample)
+microglia_Study2$mouse <- paste0(microglia_Study2$group, "_",microglia_Study2$sample)
 
-counts <- microglia_NGS123@assays$RNA@counts
-meta <- transform(microglia_NGS123@meta.data)
+counts <- microglia_Study2@assays$RNA@counts
+meta <- transform(microglia_Study2@meta.data)
 
 sce <- SingleCellExperiment::SingleCellExperiment(assays = list(counts = counts), colData = meta)
 ```
