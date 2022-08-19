@@ -21,7 +21,7 @@ libraries <- c("aws.s3", "Seurat", "Matrix", "ggplot2", "dplyr", "atvtrem2Combin
 lapply(libraries, library, character.only=T)
   
 
-meta <- read.csv("~/inst/extdata/Study1_sample_metadata.csv")
+meta <- read.csv("/inst/extdata/Study1_sample_metadata.csv")
 
 meta$sample_id <- meta$parent_id
 meta$sample_id <- plyr::mapvalues(meta$sample_id, 

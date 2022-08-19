@@ -33,7 +33,7 @@ microglia <- readRDS("~/Study1_microglia.Rds")
 ```{r}
 DefaultAssay(microglia) <- "RNA"
 
-diss_stress <- read.csv("~/inst/extdata/diss_stress.csv")
+diss_stress <- read.csv("/inst/extdata/diss_stress.csv")
 
 microglia <- microglia %>%
   NormalizeData(.) %>%
@@ -127,11 +127,11 @@ DimPlot(microglia_subset, split.by = "group", ncol = 3, cols = c(rev(brewer.pal(
 What genes define each of these clusters?
 ```{r, eval = FALSE}
 markers <- FindAllMarkers(microglia_subset, only.pos = T, min.pct = 0.25)
-write.csv(markers, file = "~/inst/extdata/Study1_microglia_cluster_markers.csv")
+write.csv(markers, file = "/inst/extdata/Study1_microglia_cluster_markers.csv")
 ```
 
 ```{r}
-markers <- read.csv("~/inst/extdata/Study1_microglia_cluster_markers.csv", header = T, row.names = 1)
+markers <- read.csv("/inst/extdata/Study1_microglia_cluster_markers.csv", header = T, row.names = 1)
 
 top5 <- markers %>% group_by(cluster) %>% slice_max(n = 5, order_by = avg_log2FC)
 ```
