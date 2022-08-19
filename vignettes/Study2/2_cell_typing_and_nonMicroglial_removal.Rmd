@@ -1,0 +1,122 @@
+---
+title: "Cell Typing and non-microglial removal"
+author: "David Tatarakis"
+date: '`r format(Sys.Date(), "%B %d, %Y")`'
+output:
+  html_document:
+    code_folding: hide
+    toc: true
+    toc_float: true
+    toc_collapsed: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, include = FALSE}
+Packages <- c("atvtrem2Combined", "dplyr", "Seurat", "aws.s3", "Matrix", "ggplot2")
+lapply(Packages, library, character.only = TRUE)
+
+set.seed(1234)
+bucket <- "com.dnli.bioinfo.data/processed/internal/NGS000123/remapped"
+```
+
+
+```{r, include=FALSE}
+integrated_object <- aws.s3::s3readRDS(bucket = bucket,
+                                       object = "ATV-Trem2_APPKI_all_samples_integrated.Rds",
+                                       region = "us-west-2")
+```
+
+```{r, include=FALSE}
+# Normalize and scale data in the unintegrated assay
+DefaultAssay(integrated_object) <- "RNA"
+integrated_object <- integrated_object %>%
+  NormalizeData(.) %>%
+  ScaleData(.)
+
+
+# Scale data in and perform PCA on the integrated assay
+DefaultAssay(integrated_object) <- "integrated"
+integrated_object <- integrated_object %>%
+  ScaleData(.) %>%
+  RunPCA(.)
+
+# Run dimensionality reduction and clustering to start with
+integrated_object <- integrated_object %>%
+  RunUMAP(., dims = 1:20) %>%
+  FindNeighbors(., dims = 1:20) %>%
+  FindClusters(., resolution = 0.2)
+```
+
+```{r, echo=FALSE, fig.width=6, fig.height=4}
+DimPlot(integrated_object, label = T)
+```
+
+```{r, echo=FALSE, fig.width=14, fig.height=4}
+DimPlot(integrated_object, label = T, split.by = "batch")
+```
+
+# Identification of non microglial clusters
+```{r, include=FALSE, eval=FALSE}
+# Marker gene analysis for these clusters
+
+# parallelization using the future package
+future::plan("multiprocess", workers = 6)
+options(future.globals.maxSize = 12000 * 1024^2)
+
+DefaultAssay(integrated_object) <- "RNA"
+markers <- FindAllMarkers(integrated_object, only.pos = T)
+
+future::plan("default")
+
+write.csv(markers, file = "~/DNLI-21-236_ATV-Trem2_APPKI_timecourse/inst/extdata/cluster_markers.csv")
+```
+
+```{r}
+DefaultAssay(integrated_object) <- "RNA"
+markers <- read.csv("~/DNLI-21-236_ATV-Trem2_APPKI_timecourse/inst/extdata/cluster_markers.csv", header = T, row.names = 1)
+top10 <- markers %>% group_by(cluster) %>% top_n(wt = avg_log2FC, n = 10)
+```
+
+```{r, fig.width=12, fig.height=5}
+FeaturePlot(integrated_object, features = c("F13a1", "Ccr2", "Cd3g","Retnlg", "Sparcl1", "Mog", "nFeature_RNA", "P2ry12"), ncol = 4)
+```
+
+
+```{r, include=FALSE, eval=FALSE}
+microglia <- subset(integrated_object, subset = seurat_clusters %in% c(0,1,2,3,4,5))
+```
+
+
+```{r, include=FALSE, eval=FALSE}
+# Reintegrate all of the microglia
+object_list <- SplitObject(microglia, split.by = "batch")
+
+
+object_list <- lapply(object_list, FUN = function(x){
+  DefaultAssay(x) <- "RNA"
+  x <- NormalizeData(x)
+  x <- FindVariableFeatures(x)
+})
+
+# parallelization using the future package
+future::plan("multiprocess", workers = 4)
+options(future.globals.maxSize = 12000 * 1024^2)
+
+features <- SelectIntegrationFeatures(object_list, nfeatures = 2500)
+anchors <- FindIntegrationAnchors(object_list, anchor.features = features)
+
+future::plan("default")
+
+microglia_integrated <- IntegrateData(anchors)
+
+saveRDS(microglia_integrated, file ="~/NGS000123_objects/ATV-Trem2_APPKI_microglia_integrated.Rds")
+
+rm(anchors)
+rm(object_list)
+```
+
+
+

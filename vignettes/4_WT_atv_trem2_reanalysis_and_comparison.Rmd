@@ -1,0 +1,572 @@
+---
+title: "Study1/Study2 comparison"
+author: "David Tatarakis"
+date: '`r format(Sys.Date(), "%B %d, %Y")`'
+output:
+  html_document:
+    code_folding: hide
+    toc: true
+    toc_float: true
+    toc_collapsed: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, include = FALSE}
+Packages <- c("atvtrem2Combined", "dplyr", "Seurat", "aws.s3", "Matrix", "ggplot2", "pheatmap", "RColorBrewer", "SingleCellExperiment", "scuttle")
+lapply(Packages, library, character.only = TRUE)
+
+`%notin%` <- Negate(`%in%`)
+
+set.seed(1234)
+bucket1 <- "com.dnli.bioinfo.data/processed/internal/NGS000123/remapped"
+bucket2 <- "com.dnli.bioinfo.data/processed/internal/NGS000073"
+
+diss_stress <- read.csv("~/DNLI-21-236_ATV-Trem2_APPKI_timecourse/inst/extdata/diss_stress.csv", sep = ",", header = T)
+```
+
+```{r, include=FALSE}
+microglia_NGS73 <- aws.s3::s3readRDS(bucket = bucket2,
+                                     object = "NGS000072_microglia_subset.Rds",
+                                     region = "us-west-2")
+  
+microglia_NGS123 <- aws.s3::s3readRDS(bucket = bucket1,
+                                     object = "ATV-Trem2_APPKI_microglia_analyzed.Rds",
+                                     region = "us-west-2")
+```
+
+
+So let's take a look at both datasets.
+
+In study #1, we have now `r dim(microglia_NGS73)[2]` microglia.
+
+In study #2, we have `r dim(microglia_NGS123)[2]` microglia.
+
+
+```{r, echo=FALSE, fig.width=10, fig.height=4}
+DimPlot(microglia_NGS73, label=T) + DimPlot(microglia_NGS123, group.by = "seurat_clusters",label = T)
+```
+
+And here they are split by treatment:
+```{r, fig.width=6, fig.height=3}
+DimPlot(microglia_NGS73, split.by = "group", ncol = 3) + NoAxes()
+```
+
+```{r, fig.width=5, fig.height=3}
+DimPlot(microglia_NGS123, split.by = "group", group.by = "seurat_clusters", ncol = 3) + NoAxes()
+```
+
+
+The effects are clearly similar with ATV:4D9 treatment. There is a broad activation unique to this treatment. But let's see if we can dig deeper into the particular activation states being triggered in each case. We will start by using the Microglia Map as a reference.
+
+# Differential state analysis
+
+## Microglia Map states
+
+```{r, include=FALSE}
+devtools::install_github("https://github.com/denalitherapeutics/microglia_sc_map")
+library(MicrogliaScMap)
+
+state_colors <- c("lightblue3", "mediumpurple3", "hotpink",  "coral2", "red1", "limegreen", "darkgreen", "lemonchiffon3", "khaki3", "ivory4")
+
+map <- retrieveMap(5)
+
+map$integrated_microglia_state <- plyr::mapvalues(map$integrated_microglia_state, 
+                                                from = c("S-Phase_cycling",
+                                                      "IFN-induced_cycling",
+                                                      "Cd74_Ly6e_Ccl6"),
+                                                to = c("Cycling1",
+                                                       "Cycling2",
+                                                       "MHCII"))
+
+Idents(map) <- "integrated_microglia_state"
+```
+
+```{r, echo=FALSE}
+DimPlot(map, cols = state_colors)
+```
+
+```{r, include=FALSE}
+# Find transfer anchors between each new data set and the map, then label transfer
+# parallelization using the future package
+future::plan("multiprocess", workers = 6)
+options(future.globals.maxSize = 12000 * 1024^2)
+
+anchors73 <- Seurat::FindTransferAnchors(reference = map, query = microglia_NGS73)
+predictions_NGS73 <- TransferData(anchorset = anchors73, refdata = map$integrated_microglia_state)
+microglia_NGS73 <- AddMetaData(microglia_NGS73, predictions_NGS73)
+rm(anchors73)
+
+anchors123 <- Seurat::FindTransferAnchors(reference = map, query = microglia_NGS123)
+predictions_NGS123 <- TransferData(anchorset = anchors123, refdata = map$integrated_microglia_state)
+microglia_NGS123 <- AddMetaData(microglia_NGS123, predictions_NGS123)
+rm(anchors123)
+
+future::plan("default")
+
+microglia_NGS73$predicted.id <- factor(microglia_NGS73$predicted.id, 
+                                                    c("Homeostatic",
+                                                      "DAM/Homeostatic",
+                                                      "DAM_Indistinct",
+                                                      "DAM_Canonical",
+                                                      "DAM_Inflammatory",
+                                                      "IFN_response_low",
+                                                      "IFN_response_high", 
+                                                      "Cycling1",
+                                                       "Cycling2",
+                                                       "MHCII"))
+
+
+microglia_NGS123$predicted.id <- factor(microglia_NGS123$predicted.id, 
+                                                    c("Homeostatic",
+                                                      "DAM/Homeostatic",
+                                                      "DAM_Indistinct",
+                                                      "DAM_Canonical",
+                                                      "DAM_Inflammatory",
+                                                      "IFN_response_low",
+                                                      "IFN_response_high", 
+                                                      "Cycling1",
+                                                       "Cycling2",
+                                                       "MHCII"))
+
+```
+
+```{r, fig.width=14, fig.height=5}
+DimPlot(microglia_NGS73, group.by = "predicted.id",cols = state_colors) + 
+  DimPlot(microglia_NGS123, group.by = "predicted.id",cols = state_colors)
+```
+
+```{r, include=FALSE}
+totals_73 <- as.data.frame((table(microglia_NGS73$predicted.id, microglia_NGS73$sample_id))) %>%
+  group_by(Var2) %>%
+  mutate(percent = Freq/sum(Freq) *100)
+
+colnames(totals_73) <- c("State", "sample_id", "Count", "Percent")
+
+meta_slim <- microglia_NGS73@meta.data %>% select(c(group, treatment, sample_id)) %>% distinct(.)
+
+totals_73 <- totals_73 %>%
+  left_join(meta_slim, by = "sample_id")
+```
+
+```{r, echo=FALSE, fig.width=10, fig.height=6}
+ggplot(totals_73, aes(x = sample_id, y = Percent, fill = State)) +
+  geom_bar(stat="identity") + 
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 45, vjust = 0.5, hjust=0.5)) +
+  coord_flip() +
+  scale_fill_manual(values = state_colors) +
+  facet_wrap(~group, scales= "free")
+```
+
+
+```{r, include=FALSE}
+totals_123 <- as.data.frame((table(microglia_NGS123$predicted.id, microglia_NGS123$sample))) %>%
+  group_by(Var2) %>%
+  mutate(percent = Freq/sum(Freq) *100)
+
+colnames(totals_123) <- c("State", "sample", "Count", "Percent")
+
+meta_slim <- microglia_NGS123@meta.data %>% select(c(genotype, group, treatment, sample)) %>% distinct(.)
+
+totals_123 <- totals_123 %>%
+  left_join(meta_slim, by = "sample")
+```
+
+```{r, echo=FALSE, fig.width=10, fig.height=6}
+ggplot(totals_123, aes(x = sample, y = Percent, fill = State)) +
+  geom_bar(stat="identity") + 
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 45, vjust = 0.5, hjust=0.5)) +
+  coord_flip() +
+  scale_fill_manual(values = state_colors) +
+  facet_wrap(~group, scales= "free")
+```
+
+```{r, include=FALSE}
+totals_123 <- totals_123 %>% ungroup() %>% dplyr::select(c(group, Percent, State))
+totals_73 <- totals_73 %>% ungroup() %>% dplyr::select(c(group, Percent, State))
+
+totals_combined <- rbind(totals_123, totals_73)
+
+totals_combined <- totals_combined %>% 
+  dplyr::filter(group %in% c("ATV:RSV",
+                             "WT_ATV-DNP02",
+                             "days_01", 
+                             "WT_ATV-4D9", 
+                             "APP-SAA_ATV-DNP02",
+                             "APP-SAA_ATV-4D9"))
+
+totals_combined$group <- factor(totals_combined$group, 
+                                levels = c("ATV:RSV",
+                                           "WT_ATV-DNP02",
+                                           "days_01", 
+                                           "WT_ATV-4D9", 
+                                           "APP-SAA_ATV-DNP02",
+                                           "APP-SAA_ATV-4D9"))
+
+totals_combined$group <- plyr::mapvalues(totals_combined$group,
+                                         from = c("ATV:RSV",
+                                                 "WT_ATV-DNP02",
+                                                 "days_01", 
+                                                 "WT_ATV-4D9", 
+                                                 "APP-SAA_ATV-DNP02",
+                                                 "APP-SAA_ATV-4D9"),
+                                         to = c("Study1_WT-ATV:RSV",
+                                                "Study2_WT-ATV:DNP02",
+                                                "Study1_WT-ATV:4D9",
+                                                "Study2_WT-ATV:4D9",
+                                                "APP/SAA-ATV:DNP02",
+                                                "APP/SAA-ATV:4D9"))
+```
+
+```{r, fig.width=12, fig.height=6, message=FALSE, echo=FALSE}
+ggplot(totals_combined, aes(x = group, y = Percent, fill = State)) +
+  geom_bar(stat = "summary") +
+  geom_point() +
+  scale_fill_manual(values = state_colors) +
+  theme_bw()+
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1)) +
+  facet_wrap(~State, ncol = 5, scale = "free_y")
+```
+
+Very similar trends in the treatment groups. Interesting to see that the addition of an AD model brings out the DAM population in a way that ATV:4D9 does not.
+
+## Activation signatures
+```{r, include=FALSE}
+microglia_NGS73$sample <- microglia_NGS73$sample_id
+
+# combine the objects so I can calculate relative sores
+combined_object <- merge(microglia_NGS73, microglia_NGS123)
+
+combined_object <- combined_object %>%
+  NormalizeData(.)
+
+signatures <- read.csv("~/DNLI-21-236_ATV-Trem2_APPKI_timecourse/inst/extdata/state_signatures.csv", sep = ",", header = T)
+
+chen_sigs <- signatures %>% filter(collection == "ChenColonna2021")
+chen_sigs <- split(chen_sigs$symbol, chen_sigs$name)
+names(chen_sigs) <- gsub("-", ".", names(chen_sigs))
+
+topics <- signatures %>% filter(collection == "topics")
+topics <- split(topics$symbol, topics$name)
+```
+
+### Chen Colonna Review signatures
+
+These are the signatures from the Chen & Colonna 2021 review.
+
+```{r, include=FALSE}
+for (i in 1:length(chen_sigs)) {
+  combined_object <- AddModuleScore(combined_object, 
+                                         features = list(chen_sigs[[i]]), 
+                                         name = paste0("C.C_", names(chen_sigs)[i], "_Score"))
+}
+
+for (i in 1:length(chen_sigs)) {
+  microglia_NGS73 <- AddModuleScore(microglia_NGS73, 
+                                         features = list(chen_sigs[[i]]), 
+                                         name = paste0("C.C_", names(chen_sigs)[i], "_Score"))
+}
+
+for (i in 1:length(chen_sigs)) {
+  microglia_NGS123 <- AddModuleScore(microglia_NGS123, 
+                                         features = list(chen_sigs[[i]]), 
+                                         name = paste0("C.C_", names(chen_sigs)[i], "_Score"))
+}
+
+chen_score_names <- paste0("C.C_", names(chen_sigs), "_Score1")
+```
+
+```{r, echo=FALSE, fig.width=12, fig.height=6, message=FALSE}
+FeaturePlot(microglia_NGS73, features = chen_score_names, min.cutoff = 0, order = T, ncol = 3) &
+  scale_color_gradientn(colors = brewer.pal("Oranges", n = 9)) &
+  NoAxes()
+```
+
+```{r, echo=FALSE, fig.width=12, fig.height=6, message=FALSE}
+FeaturePlot(microglia_NGS123, features = chen_score_names, min.cutoff = 0, order = T, ncol = 3) &
+  scale_color_gradientn(colors = brewer.pal("Oranges", n = 9)) &
+  NoAxes()
+```
+
+
+```{r,include=FALSE}
+meta_slim <- combined_object@meta.data %>% dplyr::select(c(sample, group)) %>% distinct()
+
+scores <- combined_object@meta.data %>% dplyr::select(c(sample, all_of(chen_score_names)))
+
+score_means <- scores %>% 
+  group_by(sample) %>% 
+  summarize_if(.predicate = is.numeric, .funs = mean) %>% 
+  tidyr::pivot_longer(values_to = "score", cols = all_of(chen_score_names)) %>%
+  left_join(meta_slim, by = "sample") %>%
+  dplyr::filter(group %in% c("ATV:RSV",
+                             "WT_ATV-DNP02",
+                             "days_01", 
+                             "WT_ATV-4D9", 
+                             "APP-SAA_ATV-DNP02",
+                             "APP-SAA_ATV-4D9"))
+
+score_means$group <- factor(score_means$group, 
+                            levels = c("ATV:RSV",
+                                       "WT_ATV-DNP02",
+                                       "days_01", 
+                                       "WT_ATV-4D9", 
+                                       "APP-SAA_ATV-DNP02",
+                                       "APP-SAA_ATV-4D9"))
+
+score_means$group <- plyr::mapvalues(score_means$group,
+                                         from = c("ATV:RSV",
+                                                 "WT_ATV-DNP02",
+                                                 "days_01", 
+                                                 "WT_ATV-4D9", 
+                                                 "APP-SAA_ATV-DNP02",
+                                                 "APP-SAA_ATV-4D9"),
+                                         to = c("Study1_WT-ATV:RSV",
+                                                "Study2_WT-ATV:DNP02",
+                                                "Study1_WT-ATV:4D9",
+                                                "Study2_WT-ATV:4D9",
+                                                "APP/SAA-ATV:DNP02",
+                                                "APP/SAA-ATV:4D9"))
+```
+
+```{r, echo=FALSE, fig.width=10, fig.height=5}
+ggplot(score_means, aes(x = group, y = score, color = group)) +
+  geom_boxplot() + 
+  facet_wrap(~name, scales = "free_y") +
+  geom_point() +
+  theme_bw() +
+  scale_color_manual(values = brewer.pal(name = "Dark2", n = 6))+
+  theme(axis.text.x = element_blank())
+```
+
+### Microglia Map signatures
+
+These are the signatures I created using topic modeling on the Microglia Map.
+
+```{r, include=FALSE}
+for (i in 2:length(topics)) {
+  combined_object <- AddModuleScore(combined_object, 
+                                         features = list(topics[[i]]), 
+                                         name = paste0("Topics_", names(topics)[i]))
+}
+
+for (i in 2:length(topics)) {
+  microglia_NGS73 <- AddModuleScore(microglia_NGS73, 
+                                         features = list(topics[[i]]), 
+                                         name = paste0("Topics_", names(topics)[i]))
+}
+
+for (i in 2:length(topics)) {
+  microglia_NGS123 <- AddModuleScore(microglia_NGS123, 
+                                         features = list(topics[[i]]), 
+                                         name = paste0("Topics_", names(topics)[i]))
+}
+
+topics_score_names <- paste0("Topics_", names(topics)[2:10], "1")
+```
+
+```{r, echo=FALSE, fig.width=12, fig.height=9, message=FALSE}
+FeaturePlot(microglia_NGS73, features = topics_score_names, min.cutoff = 0, order = T, ncol = 3) &
+  scale_color_gradientn(colors = brewer.pal("Oranges", n = 9)) &
+  NoAxes()
+```
+
+```{r, echo=FALSE, fig.width=12, fig.height=9, message=FALSE}
+FeaturePlot(microglia_NGS123, features = topics_score_names, min.cutoff = 0, order = T, ncol = 3) &
+  scale_color_gradientn(colors = brewer.pal("Oranges", n = 9)) &
+  NoAxes()
+```
+
+```{r,include=FALSE}
+meta_slim <- combined_object@meta.data %>% dplyr::select(c(sample, group)) %>% distinct()
+
+scores <- combined_object@meta.data %>% dplyr::select(c(sample, all_of(topics_score_names)))
+
+score_means <- scores %>% 
+  group_by(sample) %>% 
+  summarize_if(.predicate = is.numeric, .funs = mean) %>% 
+  tidyr::pivot_longer(values_to = "score", cols = all_of(topics_score_names)) %>%
+  left_join(meta_slim, by = "sample") %>%
+  dplyr::filter(group %in% c("ATV:RSV",
+                             "WT_ATV-DNP02",
+                             "days_01", 
+                             "WT_ATV-4D9", 
+                             "APP-SAA_ATV-DNP02",
+                             "APP-SAA_ATV-4D9"))
+
+score_means$group <- factor(score_means$group, 
+                            levels = c("ATV:RSV",
+                                       "WT_ATV-DNP02",
+                                       "days_01", 
+                                       "WT_ATV-4D9", 
+                                       "APP-SAA_ATV-DNP02",
+                                       "APP-SAA_ATV-4D9"))
+
+score_means$group <- plyr::mapvalues(score_means$group,
+                                         from = c("ATV:RSV",
+                                                 "WT_ATV-DNP02",
+                                                 "days_01", 
+                                                 "WT_ATV-4D9", 
+                                                 "APP-SAA_ATV-DNP02",
+                                                 "APP-SAA_ATV-4D9"),
+                                         to = c("Study1_WT-ATV:RSV",
+                                                "Study2_WT-ATV:DNP02",
+                                                "Study1_WT-ATV:4D9",
+                                                "Study2_WT-ATV:4D9",
+                                                "APP/SAA-ATV:DNP02",
+                                                "APP/SAA-ATV:4D9"))
+```
+
+```{r, echo=FALSE, fig.width=10, fig.height=7}
+ggplot(score_means, aes(x = group, y = score, color = group)) +
+  geom_boxplot() + 
+  facet_wrap(~name, scales = "free_y") +
+  geom_point() +
+  theme_bw() +
+  scale_color_manual(values = brewer.pal(name = "Dark2", n = 6))+
+  theme(axis.text.x = element_blank())
+```
+
+### Individual score genes
+```{r, include=FALSE}
+score_genes <- unique(c(as.vector(unlist(chen_sigs)), as.vector(unlist(topics))))
+
+chen_annotation <- signatures %>% dplyr::filter(collection == "ChenColonna2021")
+rownames(chen_annotation) <- chen_annotation$symbol
+chen_annotation <- dplyr::select(chen_annotation, name)
+
+chen_annotation_colors <- list(name=c(`Homeostatic`="lightblue3", 
+                                      `DAM-like`="coral2", 
+                                      `IFN`="darkgreen", 
+                                      `MHC`="grey20",
+                                      `Cyc-M` = "lemonchiffon3"),
+                               group = c(`Study1_WT-ATV-RSV` = "#1B9E77",
+                                                `Study2_WT-ATV-DNP02` = "#D95F02",
+                                                `Study1_WT-ATV-4D9` = "#7570B3",
+                                                `Study2_WT-ATV-4D9` = "#E7298A",
+                                                `APP/SAA-ATV-DNP02` = "#66A61E",
+                                                `APP/SAA-ATV-4D9` = "#E6AB02"))
+
+# we're only going to take 7 genes from each topic. Leaving out the homeostatic, LMP, and Cytokines topics.
+topics_annotation <- signatures %>% dplyr::filter(collection == "topics" & name %notin% c("Cytokines", "LMP", "Homeostasis"))
+topics_annotation <- topics_annotation %>% group_by(name) %>% slice_sample(n = 7) %>% as.data.frame()
+rownames(topics_annotation) <- topics_annotation$symbol
+topics_annotation <- dplyr::select(topics_annotation, name)
+
+topics_annotation_colors <- list(name=c(`Lipid_metabolism`="goldenrod", 
+                                      `IFN_response`="darkgreen", 
+                                      `MHCII`="grey20",
+                                      `DAM_canonical1` = "coral1",
+                                      `DAM_inflammatory_chemokines`="red1", 
+                                      `DAM_inflammatory_cytokines`="red4", 
+                                      `DAM_canonical2` = "coral3"),
+                               group = c(`Study1_WT-ATV-RSV` = "#1B9E77",
+                                                `Study2_WT-ATV-DNP02` = "#D95F02",
+                                                `Study1_WT-ATV-4D9` = "#7570B3",
+                                                `Study2_WT-ATV-4D9` = "#E7298A",
+                                                `APP/SAA-ATV-DNP02` = "#66A61E",
+                                                `APP/SAA-ATV-4D9` = "#E6AB02"))
+
+```
+
+```{r,include=FALSE}
+# setting up a combined object that includes only the groups of interest. Then factor and rename groups.
+filtered_object <- subset(combined_object, 
+                          subset = group %in% c("ATV:RSV",
+                                                 "WT_ATV-DNP02",
+                                                 "days_01", 
+                                                 "WT_ATV-4D9", 
+                                                 "APP-SAA_ATV-DNP02",
+                                                 "APP-SAA_ATV-4D9"))
+
+filtered_object$group <- factor(filtered_object$group, 
+                            levels = c("ATV:RSV",
+                                       "WT_ATV-DNP02",
+                                       "days_01", 
+                                       "WT_ATV-4D9", 
+                                       "APP-SAA_ATV-DNP02",
+                                       "APP-SAA_ATV-4D9"))
+
+filtered_object$group <- plyr::mapvalues(filtered_object$group,
+                                         from = c("ATV:RSV",
+                                                 "WT_ATV-DNP02",
+                                                 "days_01", 
+                                                 "WT_ATV-4D9", 
+                                                 "APP-SAA_ATV-DNP02",
+                                                 "APP-SAA_ATV-4D9"),
+                                         to = c("Study1_WT-ATV-RSV",
+                                                "Study2_WT-ATV-DNP02",
+                                                "Study1_WT-ATV-4D9",
+                                                "Study2_WT-ATV-4D9",
+                                                "APP/SAA-ATV-DNP02",
+                                                "APP/SAA-ATV-4D9"))
+
+filtered_object <- ScaleData(filtered_object, features = score_genes)
+filtered_object$mouse <- paste0(filtered_object$group, "_",filtered_object$sample)
+Idents(filtered_object) <- "mouse"
+
+sample_annotation <-  filtered_object@meta.data %>% select(c(group, treatment, mouse)) %>% distinct(.)
+sample_annotation$group <- factor(sample_annotation$group, 
+                                  levels = c("Study1_WT-ATV-RSV",
+                                                "Study2_WT-ATV-DNP02",
+                                                "Study1_WT-ATV-4D9",
+                                                "Study2_WT-ATV-4D9",
+                                                "APP/SAA-ATV-DNP02",
+                                                "APP/SAA-ATV-4D9"))
+sample_annotation <- sample_annotation %>% group_by(group) %>% dplyr::arrange(.by_group = T) %>% as.data.frame()
+rownames(sample_annotation) <- sample_annotation$mouse
+
+sample_annotation_slim <- sample_annotation %>% dplyr::select(group)
+rownames(sample_annotation_slim) <- sample_annotation$mouse
+
+
+```
+
+```{r, include=FALSE}
+chen_averages <- AverageExpression(filtered_object, features = rownames(chen_annotation), group.by = "mouse")
+topics_averages <- AverageExpression(filtered_object, features = rownames(topics_annotation), group.by = "mouse")
+```
+
+```{r, echo=FALSE, fig.width=6.5, fig.height=10.5}
+pheatmap::pheatmap(mat = chen_averages$RNA[,rownames(sample_annotation_slim)], 
+                   scale = "row",
+                   annotation_row = chen_annotation,
+                   annotation_col = data.frame(sample_annotation_slim),
+                   annotation_colors = chen_annotation_colors,
+                   cluster_cols = F, 
+                   cluster_rows = F, 
+                   show_rownames = T,
+                   gaps_col = c(3, 7, 10 ,14, 18),
+                   gaps_row = c(15, 40, 49, 55),
+                   main = "Chen/Colonna Review Signature Genes",
+                   color = rev(colorRampPalette(RColorBrewer::brewer.pal(11, "RdBu"))(256)))
+```
+
+
+```{r, echo=FALSE, fig.width=7.5, fig.height=10}
+pheatmap::pheatmap(mat = topics_averages$RNA[,rownames(sample_annotation_slim)], 
+                   scale = "row",
+                   annotation_row = topics_annotation,
+                   annotation_col = data.frame(sample_annotation_slim),
+                   annotation_colors = topics_annotation_colors,
+                   cluster_cols = F, 
+                   cluster_rows = F, 
+                   show_rownames = T, 
+                   gaps_col = c(3, 7, 10 ,14, 18),
+                   gaps_row = c(14, 29, 35, 42), 
+                   main = "Microglia Map Topic Model Genes",
+                   color = rev(colorRampPalette(RColorBrewer::brewer.pal(11, "RdBu"))(256)))
+```
+
+```{r, eval=FALSE}
+microglia_NGS123$mouse <- paste0(microglia_NGS123$group, "_",microglia_NGS123$sample)
+
+counts <- microglia_NGS123@assays$RNA@counts
+meta <- transform(microglia_NGS123@meta.data)
+
+sce <- SingleCellExperiment::SingleCellExperiment(assays = list(counts = counts), colData = meta)
+```

@@ -1,0 +1,413 @@
+---
+title: "Microglia State Analysis"
+author: "David Tatarakis"
+date: '`r format(Sys.Date(), "%B %d, %Y")`'
+output:
+  html_document:
+    code_folding: hide
+    toc: true
+    toc_float: true
+    toc_collapsed: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, include = FALSE}
+Packages <- c("atvtrem2Combined", "dplyr", "Seurat", "aws.s3", "Matrix", "ggplot2", "pheatmap", "RColorBrewer")
+lapply(Packages, library, character.only = TRUE)
+
+`%notin%` <- Negate(`%in%`)
+
+set.seed(1234)
+bucket <- "com.dnli.bioinfo.data/processed/internal/NGS000123/remapped"
+```
+
+```{r, include=FALSE}
+microglia_integrated <- aws.s3::s3readRDS(bucket = bucket,
+                                       object = "ATV-Trem2_APPKI_microglia_integrated.Rds",
+                                       region = "us-west-2")
+
+diss_stress <- read.csv("~/DNLI-21-236_ATV-Trem2_APPKI_timecourse/inst/extdata/diss_stress.csv", sep = ",", header = T)
+
+# refactor some covariates and rename
+microglia_integrated$group <- paste0(microglia_integrated$genotype, "_", microglia_integrated$treatment)
+
+microglia_integrated$group <- factor(microglia_integrated$group, levels = c("hTfR KI HOM_ATV:DNP02",
+                                                                            "hTfR KI HOM_ATV:4D9",
+                                                                            "hTfR KI HOM, APP-SAA HOM_4D9",
+                                                                            "hTfR KI HOM, APP-SAA HOM_ATV:DNP02",
+                                                                            "hTfR KI HOM, APP-SAA HOM_ATV:4D9"))
+
+microglia_integrated$treatment <- factor(microglia_integrated$treatment, levels = c("ATV:DNP02",
+                                                                                    "4D9",
+                                                                                    "ATV:4D9"))
+
+microglia_integrated$group <- plyr::mapvalues(microglia_integrated$group, 
+                                      from = c(as.character(unique(microglia_integrated$group))), 
+                                      to= c("WT_ATV-DNP02",
+                                            "WT_ATV-4D9",
+                                            "APP-SAA_ATV-DNP02",
+                                            "APP-SAA_ATV-4D9",
+                                            "APP-SAA 4D9"))
+```
+
+Here's the breakdown of condition in each batch (there is one mouse per condition in each batch)
+
+```{r}
+totals <- as.data.frame(table(microglia_integrated$group, microglia_integrated$batch))%>%
+  group_by(Var2) %>%
+  mutate(percent = Freq/sum(Freq) *100)
+
+
+colnames(totals) <- c("Condition", "Batch", "Count", "Percent")
+
+ggplot(totals, aes(x = Batch, y = Percent, fill = Condition)) +
+  geom_bar(stat = "identity") + 
+  theme_bw() +
+  ggsci::scale_fill_nejm()
+```
+
+# Dimensionality Reduction and Clustering
+
+First, we will peform dimensionality reduction (UMAP) and louvain clustering. We're going to remove genes commonly known to be related to dissociation stress before running PCA. 
+```{r, include=FALSE}
+# Run PCA without dissociation stress signature genes
+PCA_features <- rownames(microglia_integrated@assays$integrated)[which(rownames(microglia_integrated@assays$integrated) %notin% diss_stress$symbol)]
+
+microglia_integrated <- microglia_integrated %>%
+  ScaleData(.) %>%
+  RunPCA(., features = PCA_features)
+
+microglia_integrated <- microglia_integrated %>%
+  RunUMAP(., dims = 1:9) %>%
+  FindNeighbors(., dims = 1:9) %>%
+  FindClusters(., resolution = 0.4)
+```
+
+```{r, echo=FALSE, fig.width=6, fig.height=4}
+DimPlot(microglia_integrated)
+```
+
+We have 8 clusters identified at this resolution. It looks pretty concordant with the UMAP.
+
+```{r, echo=FALSE, fig.width=16, fig.height=4}
+DimPlot(microglia_integrated, split.by = "batch")
+```
+
+Broken out by sequencing batch, we can see that batch effects are not driving either the UMAP or clustering. Great!
+
+## Differential cluster abundances
+
+```{r, echo=FALSE, fig.width=12, fig.height=7}
+DimPlot(microglia_integrated, split.by = "group", ncol = 3)
+```
+
+```{r, fig.width=24, fig.height=4}
+FeaturePlot(microglia_integrated, "Fos", order = T, split.by = "group", ncol = 3, min.cutoff = 2)
+```
+
+From looking at the UMAP broken out by conditions, we see a couple of trends. There appear to be two major axes in the UMAP: AD pathology and ATV:4D9 treatment. Interestingly, they are partially overlapping, but not entirely.
+
+```{r, include=FALSE}
+totals <- as.data.frame((table(microglia_integrated$seurat_clusters, microglia_integrated$sample))) %>%
+  group_by(Var2) %>%
+  mutate(percent = Freq/sum(Freq) *100)
+
+colnames(totals) <- c("Cluster", "sample", "Count", "Percent")
+
+meta_slim <- microglia_integrated@meta.data %>% select(c(genotype, group, treatment, sample)) %>% distinct(.)
+
+totals <- totals %>%
+  left_join(meta_slim, by = "sample")
+```
+
+```{r, echo=FALSE, fig.width=10, fig.height=6}
+ggplot(totals, aes(x = sample, y = Percent, fill = Cluster)) +
+  geom_bar(stat="identity") + 
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 45, vjust = 0.5, hjust=0.5)) +
+  coord_flip() +
+  facet_wrap(~group, scales= "free")
+```
+
+Here are the cluster percentages for each mouse, grouped by condition. This nicely shows strong replication in each condition. There's not a lot of noise within groups, so that's encouraging. Here's a simplified view:
+
+```{r, include=FALSE}
+totals <- as.data.frame((table(microglia_integrated$seurat_clusters, microglia_integrated$group))) %>%
+  group_by(Var2) %>%
+  mutate(percent = Freq/sum(Freq) *100)
+
+colnames(totals) <- c("Cluster", "group", "Count", "Percent")
+
+meta_slim <- microglia_integrated@meta.data %>% select(c(genotype, group, treatment)) %>% distinct(.)
+
+totals <- totals %>%
+  left_join(meta_slim, by = "group")
+```
+
+```{r, echo=FALSE, fig.width=6, fig.height=3}
+ggplot(totals, aes(x = group, y = Percent, fill = Cluster)) +
+  geom_bar(stat="identity") + 
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 45, vjust = 0.5, hjust=0.5)) +
+  coord_flip()
+```
+
+It looks like transgenic mice have a decrease in clusters 0 and 3 compared to WT with non ATV:4D9 treatments (4D9 or ATV:DNP02). They also show an increase in cluster 1, primarily, along with increases in clusters 6 and 8.
+
+ATV:4D9 induces an almost total loss of clusters 0 and 3 in both genotypes. Clusters 2 and 5 are increased in both, but more so in the WT mice. Cluster 4 is most enriched in the transgenic mice, but also slightly increased in WT.
+
+Therefore, the most interesting clusters to me are:
+
+3 & 6 - enriched in transgenic mice compared to WT. But reduced by ATV:4D9 treatment.
+7 - induced by ATV:4D9 regardless of genotype
+5 - induced by ATV:4D9 treatment, but more in transgenic mice.
+1 & 4 - induced by ATV:4D9 treatment, but more in WT mice.
+
+So what do these clusters represent? Lets examine this in a few ways. First off we'll do...
+
+# Subpopulation gene expression
+
+## Traditional Marker Gene Analysis
+
+```{r, include=FALSE}
+DefaultAssay(microglia_integrated) <- "RNA"
+
+microglia_integrated <- microglia_integrated %>%
+  NormalizeData(.) %>%
+  ScaleData(., features = rownames(.))
+```
+
+```{r, include=FALSE, eval=FALSE}
+markers <- FindAllMarkers(microglia_integrated, only.pos = T)
+write.csv(markers, file = "~/DNLI-21-236_ATV-Trem2_APPKI_timecourse/inst/extdata/microglia_cluster_markers.csv")
+```
+
+```{r, include=FALSE}
+markers <- read.csv("~/DNLI-21-236_ATV-Trem2_APPKI_timecourse/inst/extdata/microglia_cluster_markers.csv", 
+                    row.names = 1)
+top10 <- markers %>% group_by(cluster) %>% top_n(wt = avg_log2FC, n = 10)
+```
+
+```{r,include=FALSE}
+averages <- AverageExpression(microglia_integrated, features = top10$gene)
+```
+
+```{r, echo=FALSE, fig.width=4, fig.height=10}
+pheatmap::pheatmap(mat = averages$RNA, 
+                   scale = "row", 
+                   cluster_cols = F, 
+                   cluster_rows = F, 
+                   show_rownames = T,
+                   color = rev(colorRampPalette(RColorBrewer::brewer.pal(11, "RdBu"))(256)))
+```
+
+There's some pretty obvious conclusions here already. 
+
+Clusters 1 and 8 are the DAMs. And cluster 8 is the DAM2 population I've identified in the past. They have Spp1 and Gpnmb expression, as well as MHCII genes.
+
+Cluster 7 is cycling cells.
+
+Cluster 4 is IFN response.
+
+Clusters 2 and 5 are also cycling, but they might have inflammatory cytokine expression?
+
+## Microglia state signatures
+```{r, include=FALSE}
+
+signatures <- read.csv("~/DNLI-21-236_ATV-Trem2_APPKI_timecourse/inst/extdata/state_signatures.csv", sep = ",", header = T)
+
+chen_sigs <- signatures %>% filter(collection == "ChenColonna2021")
+chen_sigs <- split(chen_sigs$symbol, chen_sigs$name)
+names(chen_sigs) <- gsub("-", ".", names(chen_sigs))
+
+topics <- signatures %>% filter(collection == "topics")
+topics <- split(topics$symbol, topics$name)
+```
+
+### Chen Colonna Review signatures
+
+These are the signatures from the Chen & Colonna 2021 review.
+
+```{r, include=FALSE}
+for (i in 1:length(chen_sigs)) {
+  microglia_integrated <- AddModuleScore(microglia_integrated, 
+                                         features = list(chen_sigs[[i]]), 
+                                         name = paste0("C.C_", names(chen_sigs)[i], "_Score"))
+}
+
+chen_score_names <- paste0("C.C_", names(chen_sigs), "_Score1")
+```
+
+```{r, echo=FALSE, fig.width=12, fig.height=6, message=FALSE}
+FeaturePlot(microglia_integrated, features = chen_score_names, min.cutoff = 0, order = T, ncol = 3) &
+  scale_color_gradientn(colors = brewer.pal("Oranges", n = 9)) &
+  NoAxes()
+```
+
+```{r,include=FALSE}
+meta_slim <- microglia_integrated@meta.data %>% dplyr::select(c(sample, group, genotype, treatment)) %>% distinct()
+
+scores <- microglia_integrated@meta.data %>% dplyr::select(c(sample, all_of(chen_score_names)))
+
+score_means <- scores %>% 
+  group_by(sample) %>% 
+  summarize_if(.predicate = is.numeric, .funs = mean) %>% 
+  tidyr::pivot_longer(values_to = "score", cols = all_of(chen_score_names)) %>%
+  left_join(meta_slim, by = "sample")
+```
+
+```{r, echo=FALSE, fig.width=12, fig.height=6}
+ggplot(score_means, aes(x = group, y = score, color = group)) +
+  geom_boxplot() + 
+  facet_wrap(~name, scales = "free_y") +
+  geom_point() +
+  theme_bw() +
+  theme(axis.text.x = element_blank())
+```
+
+### Microglia Map signatures
+
+These are the signatures I created using topic modeling on the Microglia Map.
+
+```{r, include=FALSE}
+for (i in 2:length(topics)) {
+  microglia_integrated <- AddModuleScore(microglia_integrated, 
+                                         features = list(topics[[i]]), 
+                                         name = paste0("Topics_", names(topics)[i]))
+}
+
+topics_score_names <- paste0("Topics_", names(topics)[2:10], "1")
+```
+
+```{r, echo=FALSE, fig.width=12, fig.height=9, message=FALSE}
+FeaturePlot(microglia_integrated, features = topics_score_names, min.cutoff = 0, order = T, ncol = 3) &
+  scale_color_gradientn(colors = brewer.pal("Oranges", n = 9)) &
+  NoAxes()
+```
+
+```{r,include=FALSE}
+meta_slim <- microglia_integrated@meta.data %>% dplyr::select(c(sample, group, genotype, treatment)) %>% distinct()
+
+scores <- microglia_integrated@meta.data %>% dplyr::select(c(sample, all_of(topics_score_names)))
+
+score_means <- scores %>% 
+  group_by(sample) %>% 
+  summarize_if(.predicate = is.numeric, .funs = mean) %>% 
+  tidyr::pivot_longer(values_to = "score", cols = all_of(topics_score_names)) %>%
+  left_join(meta_slim, by = "sample")
+```
+
+```{r, echo=FALSE, fig.width=12, fig.height=8}
+ggplot(score_means, aes(x = group, y = score, color = group)) +
+  geom_boxplot() + 
+  facet_wrap(~name, scales = "free_y") +
+  geom_point() +
+  theme_bw() +
+  theme(axis.text.x = element_blank())
+```
+
+### Individual score genes
+```{r, include=FALSE}
+score_genes <- unique(c(as.vector(unlist(chen_sigs)), as.vector(unlist(topics))))
+
+chen_annotation <- signatures %>% dplyr::filter(collection == "ChenColonna2021")
+rownames(chen_annotation) <- chen_annotation$symbol
+chen_annotation <- dplyr::select(chen_annotation, name)
+
+chen_annotation_colors <- list(name=c(`Homeostatic`="lightblue3", 
+                                      `DAM-like`="coral2", 
+                                      `IFN`="darkgreen", 
+                                      `MHC`="grey20",
+                                      `Cyc-M` = "lemonchiffon3"),
+                               group = c(`WT_ATV-DNP02` = "#1B9E77",
+                                                `WT_ATV-4D9` = "#D95F02",
+                                                `APP-SAA_ATV-DNP02` = "#7570B3",
+                                                `APP-SAA_ATV-4D9` = "#E7298A",
+                                                `APP-SAA 4D9` = "#66A61E"))
+
+# we're only going to take 8 genes from each topic. Leaving out the homeostatic, LMP, and Cytokines topics.
+topics_annotation <- signatures %>% dplyr::filter(collection == "topics" & name %notin% c("Cytokines", "LMP", "Homeostasis"))
+topics_annotation <- topics_annotation %>% group_by(name) %>% slice_sample(n = 7) %>% as.data.frame()
+rownames(topics_annotation) <- topics_annotation$symbol
+topics_annotation <- dplyr::select(topics_annotation, name)
+
+topics_annotation_colors <- list(name=c(`Lipid_metabolism`="goldenrod", 
+                                      `IFN_response`="darkgreen", 
+                                      `MHCII`="grey20",
+                                      `DAM_canonical1` = "coral1",
+                                      `DAM_inflammatory_chemokines`="red1", 
+                                      `DAM_inflammatory_cytokines`="red4", 
+                                      `DAM_canonical2` = "coral3"),
+                               group = c(`WT_ATV-DNP02` = "#1B9E77",
+                                                `WT_ATV-4D9` = "#D95F02",
+                                                `APP-SAA_ATV-DNP02` = "#7570B3",
+                                                `APP-SAA_ATV-4D9` = "#E7298A",
+                                                `APP-SAA 4D9` = "#66A61E"))
+
+```
+
+```{r,include=FALSE}
+# setting up a combined object that includes only the groups of interest. Then factor and rename groups.
+microglia_integrated <- ScaleData(microglia_integrated, features = score_genes)
+microglia_integrated$mouse <- paste0(microglia_integrated$group, "_",microglia_integrated$sample)
+Idents(microglia_integrated) <- "mouse"
+
+sample_annotation <-  microglia_integrated@meta.data %>% select(c(group, treatment, mouse)) %>% distinct(.)
+sample_annotation$group <- factor(sample_annotation$group, 
+                                  levels = c("WT_ATV-DNP02",
+                                            "WT_ATV-4D9",
+                                            "APP-SAA_ATV-DNP02",
+                                            "APP-SAA 4D9",
+                                            "APP-SAA_ATV-4D9"))
+sample_annotation <- sample_annotation %>% group_by(group) %>% dplyr::arrange(.by_group = T) %>% as.data.frame()
+rownames(sample_annotation) <- sample_annotation$mouse
+
+sample_annotation_slim <- sample_annotation %>% dplyr::select(group)
+rownames(sample_annotation_slim) <- sample_annotation$mouse
+
+
+```
+
+
+```{r, include=FALSE}
+chen_averages <- AverageExpression(microglia_integrated, features = rownames(chen_annotation), group.by = "mouse")
+topics_averages <- AverageExpression(microglia_integrated, features = rownames(topics_annotation), group.by = "mouse")
+```
+
+```{r, echo=FALSE, fig.width=6.5, fig.height=10.5}
+pheatmap::pheatmap(mat = chen_averages$RNA[,rownames(sample_annotation_slim)], 
+                   scale = "row",
+                   annotation_row = chen_annotation,
+                   annotation_col = data.frame(sample_annotation_slim),
+                   annotation_colors = chen_annotation_colors,
+                   cluster_cols = F, 
+                   cluster_rows = F, 
+                   show_rownames = T,
+                   gaps_col = c(4, 8, 12 ,16),
+                   gaps_row = c(14, 39, 48, 54),
+                   main = "Chen/Colonna Review Signature Genes",
+                   color = rev(colorRampPalette(RColorBrewer::brewer.pal(11, "RdBu"))(256)))
+```
+
+
+```{r, echo=FALSE, fig.width=7.5, fig.height=10}
+pheatmap::pheatmap(mat = topics_averages$RNA[,rownames(sample_annotation_slim)], 
+                   scale = "row",
+                   annotation_row = topics_annotation,
+                   annotation_col = data.frame(sample_annotation_slim),
+                   annotation_colors = topics_annotation_colors,
+                   cluster_cols = F, 
+                   cluster_rows = F, 
+                   show_rownames = T, 
+                   gaps_col = c(4, 8, 12 ,16),
+                   gaps_row = c(14, 21, 28, 35, 42), 
+                   main = "Microglia Map Topic Model Genes",
+                   color = rev(colorRampPalette(RColorBrewer::brewer.pal(11, "RdBu"))(256)))
+```
+
+```{r, include=FALSE, eval=FALSE}
+saveRDS(microglia_integrated, "~/NGS000123_objects/ATV-Trem2_APPKI_microglia_analyzed.Rds")
+```

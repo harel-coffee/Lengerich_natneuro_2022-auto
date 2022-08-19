@@ -1,0 +1,250 @@
+---
+title: "data preprocessing"
+author: "David Tatarakis"
+date: '`r format(Sys.Date(), "%B %d, %Y")`'
+output:
+  html_document:
+    code_folding: hide
+    toc: true
+    toc_float: true
+    toc_collapsed: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, include = FALSE}
+Packages <- c("atvtrem2Combined", "dplyr", "Seurat", "aws.s3", "Matrix")
+lapply(Packages, library, character.only = TRUE)
+
+mito.cutoff <- 7.5
+nCount.cutoff <- 60000
+set.seed(1234)
+CMOs <- c("CMO301", "CMO302", "CMO303", "CMO304", "CMO305", "CMO306", "CMO307", "CMO308", "CMO309", "CMO310")
+
+`%notin%` <- Negate(`%in%`)
+```
+
+## Read in all 20 of the sample data sets
+```{r}
+metadata <- s3read_using(FUN = read.csv, 
+                         bucket = "com.dnli.bioinfo.data/processed/internal/NGS000123",
+                         object = "sample_metadata.csv",
+                         opts = list(region = "us-west-2"))
+
+
+Pool1_samples <- c("TW01", "TW02", "TW03", "TW04", "TW05")
+
+Pool2_samples <- c("TW09", "TW10", "TW11", "TW12", "TW13")
+
+Pool3_samples <- c("TW17", "TW18", "TW19", "TW20", "TW21")
+
+Pool4_samples <- c("TW29", "TW30", "TW31", "TW32", "TW33")
+
+
+metadata <- metadata %>% filter(sample_name %in% c(Pool1_samples, Pool2_samples, Pool3_samples, Pool4_samples))
+
+pool1 <- list()
+pool2 <- list()
+pool3 <- list()
+pool4 <- list()
+
+# Read in Pool 1 data sets
+for (i in 1:length(Pool1_samples)){
+
+  object <- s3.read10X(bucket = paste0("com-dnli-ngs/10x-data/NGS000123/novaseq_remap/pool1/outs/per_sample_outs/", 
+                                   Pool1_samples[i], 
+                                   "/count/sample_filtered_feature_bc_matrix"), 
+                   region = "us-east-1", 
+                   min.cells = 3, 
+                   min.features = 50, 
+                   project = paste0("ATV:Trem2_APPKI_", Pool1_samples[i]))
+  
+  meta <- metadata %>% dplyr::filter(sample_name == Pool1_samples[i])
+  
+  object@meta.data$sample <- meta$sample_name
+  object@meta.data$batch <- meta$batch
+  object@meta.data$genotype <- meta$genotype
+  object@meta.data$group <- paste0(meta$treatment, "_", meta$time_point)
+  object@meta.data$dosing_solution_code <- meta$dosing_solution_code
+  object@meta.data$time_point <- meta$time_point
+  object@meta.data$antibody_dose <- meta$antibody_dose
+  object@meta.data$sex <- meta$sex
+  object@meta.data$treatment <- meta$treatment
+  object@meta.data$cohort <- meta$cohort
+  
+  #remove CMO reads
+  object <- object[which(rownames(object) %notin% CMOs), ]
+  
+  pool1[[i]] <- object
+}
+
+# Read in Pool 2 data sets
+for (i in 1:length(Pool2_samples)){
+
+  object <- s3.read10X(bucket = paste0("com-dnli-ngs/10x-data/NGS000123/novaseq_remap/pool2/outs/per_sample_outs/", 
+                                   Pool2_samples[i], 
+                                   "/count/sample_filtered_feature_bc_matrix"), 
+                   region = "us-east-1", 
+                   min.cells = 3, 
+                   min.features = 50, 
+                   project = paste0("ATV:Trem2_APPKI_", Pool2_samples[i]))
+  
+  meta <- metadata %>% dplyr::filter(sample_name == Pool2_samples[i])
+  
+  object@meta.data$sample <- meta$sample_name
+  object@meta.data$batch <- meta$batch
+  object@meta.data$genotype <- meta$genotype
+  object@meta.data$group <- paste0(meta$treatment, "_", meta$time_point)
+  object@meta.data$dosing_solution_code <- meta$dosing_solution_code
+  object@meta.data$time_point <- meta$time_point
+  object@meta.data$antibody_dose <- meta$antibody_dose
+  object@meta.data$sex <- meta$sex
+  object@meta.data$treatment <- meta$treatment
+  object@meta.data$cohort <- meta$cohort
+  
+  #remove CMO reads
+  object <- object[which(rownames(object) %notin% CMOs), ]
+  
+  pool2[[i]] <- object
+}
+
+# Read in Pool 3 data sets
+for (i in 1:length(Pool3_samples)){
+
+  object <- s3.read10X(bucket = paste0("com-dnli-ngs/10x-data/NGS000123/novaseq_remap/pool3/outs/per_sample_outs/", 
+                                   Pool3_samples[i], 
+                                   "/count/sample_filtered_feature_bc_matrix"), 
+                   region = "us-east-1", 
+                   min.cells = 3, 
+                   min.features = 50, 
+                   project = paste0("ATV:Trem2_APPKI_", Pool3_samples[i]))
+  
+  meta <- metadata %>% dplyr::filter(sample_name == Pool3_samples[i])
+  
+  object@meta.data$sample <- meta$sample_name
+  object@meta.data$batch <- meta$batch
+  object@meta.data$genotype <- meta$genotype
+  object@meta.data$group <- paste0(meta$treatment, "_", meta$time_point)
+  object@meta.data$dosing_solution_code <- meta$dosing_solution_code
+  object@meta.data$time_point <- meta$time_point
+  object@meta.data$antibody_dose <- meta$antibody_dose
+  object@meta.data$sex <- meta$sex
+  object@meta.data$treatment <- meta$treatment
+  object@meta.data$cohort <- meta$cohort
+  
+  #remove CMO reads
+  object <- object[which(rownames(object) %notin% CMOs), ]
+  
+  pool3[[i]] <- object
+}
+
+# Read in Pool 4 data sets
+for (i in 1:length(Pool4_samples)){
+
+  object <- s3.read10X(bucket = paste0("com-dnli-ngs/10x-data/NGS000123/novaseq_remap/pool4/outs/per_sample_outs/", 
+                                   Pool4_samples[i], 
+                                   "/count/sample_filtered_feature_bc_matrix"), 
+                   region = "us-east-1", 
+                   min.cells = 3, 
+                   min.features = 50, 
+                   project = paste0("ATV:Trem2_APPKI_", Pool4_samples[i]))
+  
+  meta <- metadata %>% dplyr::filter(sample_name == Pool4_samples[i])
+  
+  object@meta.data$sample <- meta$sample_name
+  object@meta.data$batch <- meta$batch
+  object@meta.data$genotype <- meta$genotype
+  object@meta.data$group <- paste0(meta$treatment, "_", meta$time_point)
+  object@meta.data$dosing_solution_code <- meta$dosing_solution_code
+  object@meta.data$time_point <- meta$time_point
+  object@meta.data$antibody_dose <- meta$antibody_dose
+  object@meta.data$sex <- meta$sex
+  object@meta.data$treatment <- meta$treatment
+  object@meta.data$cohort <- meta$cohort
+  
+  #remove CMO reads
+  object <- object[which(rownames(object) %notin% CMOs), ]
+  
+  pool4[[i]] <- object
+}
+
+rm(object)
+```
+
+## Merge each series of objects into a single object for each sequencing pool (batch)
+```{r}
+pool1_seurat <- merge(x = pool1[[1]], y = c(pool1[[2]], pool1[[3]], pool1[[4]], pool1[[5]]))
+pool2_seurat <- merge(x = pool2[[1]], y = c(pool2[[2]], pool2[[3]], pool2[[4]], pool2[[5]]))
+pool3_seurat <- merge(x = pool3[[1]], y = c(pool3[[2]], pool3[[3]], pool3[[4]], pool3[[5]]))
+pool4_seurat <- merge(x = pool4[[1]], y = c(pool4[[2]], pool4[[3]], pool4[[4]], pool4[[5]]))
+
+rm(list=c("pool1", "pool2", "pool3", "pool4"))
+```
+
+
+## Perform QC cutoffs for each object
+```{r}
+# Pool1
+pool1_seurat[["percent.mito"]] <- Seurat::PercentageFeatureSet(pool1_seurat, pattern = "^mt-")
+VlnPlot(pool1_seurat, features = c("nFeature_RNA", "nCount_RNA", "percent.mito"))
+pool1_seurat <- subset(pool1_seurat, subset = nCount_RNA <= nCount.cutoff & percent.mito <= mito.cutoff)
+VlnPlot(pool1_seurat, features = c("nFeature_RNA", "nCount_RNA", "percent.mito"))
+```
+
+```{r}
+# Pool2
+pool2_seurat[["percent.mito"]] <- Seurat::PercentageFeatureSet(pool2_seurat, pattern = "^mt-")
+VlnPlot(pool2_seurat, features = c("nFeature_RNA", "nCount_RNA", "percent.mito"))
+pool2_seurat <- subset(pool2_seurat, subset = nCount_RNA <= nCount.cutoff & percent.mito <= mito.cutoff)
+VlnPlot(pool2_seurat, features = c("nFeature_RNA", "nCount_RNA", "percent.mito"))
+```
+
+```{r}
+# Pool3
+pool3_seurat[["percent.mito"]] <- Seurat::PercentageFeatureSet(pool3_seurat, pattern = "^mt-")
+VlnPlot(pool3_seurat, features = c("nFeature_RNA", "nCount_RNA", "percent.mito"))
+pool3_seurat <- subset(pool3_seurat, subset = nCount_RNA <= nCount.cutoff & percent.mito <= mito.cutoff)
+VlnPlot(pool3_seurat, features = c("nFeature_RNA", "nCount_RNA", "percent.mito"))
+```
+
+```{r}
+# Pool1
+pool4_seurat[["percent.mito"]] <- Seurat::PercentageFeatureSet(pool4_seurat, pattern = "^mt-")
+VlnPlot(pool4_seurat, features = c("nFeature_RNA", "nCount_RNA", "percent.mito"))
+pool4_seurat <- subset(pool4_seurat, subset = nCount_RNA <= nCount.cutoff & percent.mito <= mito.cutoff)
+VlnPlot(pool4_seurat, features = c("nFeature_RNA", "nCount_RNA", "percent.mito"))
+```
+
+```{r, eval=FALSE}
+saveRDS(pool1_seurat, "~/NGS000123_objects/pool1_seurat.Rds")
+saveRDS(pool2_seurat, "~/NGS000123_objects/pool2_seurat.Rds")
+saveRDS(pool3_seurat, "~/NGS000123_objects/pool3_seurat.Rds")
+saveRDS(pool4_seurat, "~/NGS000123_objects/pool4_seurat.Rds")
+```
+
+# Integrate the pools together (batch correction)
+```{r, include=FALSE, eval=FALSE}
+object_list <- list(pool1_seurat, pool2_seurat, pool3_seurat, pool4_seurat)
+
+object_list <- lapply(object_list, FUN = function(x){
+  x <- NormalizeData(x)
+  x <- FindVariableFeatures(x)
+})
+
+# parallelization using the future package
+future::plan("multiprocess", workers = 4)
+options(future.globals.maxSize = 12000 * 1024^2)
+
+features <- SelectIntegrationFeatures(object_list, nfeatures = 2500)
+anchors <- FindIntegrationAnchors(object_list, anchor.features = features)
+
+future::plan("default")
+
+integrated_object <- IntegrateData(anchors)
+
+saveRDS(integrated_object, file ="~/ATV-Trem2_APPKI_all_samples_integrated.Rds")
+```
+
+

@@ -1,0 +1,773 @@
+---
+title: "mouse_hTREM2_KI_bulk_analysis"
+author: "David Tatarakis"
+date: '`r format(Sys.Date(), "%B %d, %Y")`'
+output:
+  html_document:
+    code_folding: hide
+    toc: true
+    toc_float: true
+    toc_collapsed: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r,message=FALSE, warning=FALSE}
+bucket <- "com-dnli-ngs/10x-data/NGS000072/alevin-fry/analysis/knee-quants"
+object <- "mouse_hTREM2_KI_bulk-rna-seq.rds"
+
+library(FacileBiocData)
+library(FacileAnalysis)
+library(FacileIncubator)
+library(edgeR)
+library(dplyr)
+library(tidyverse)
+library(tidyr)
+library(pheatmap)
+library(ggplot2)
+```
+
+```{r, message=FALSE, warning=FALSE}
+# Read in the data
+DGEList <- aws.s3::s3readRDS(bucket = bucket, object = object, region = "us-east-1")
+gene.all <- DGEList$genes
+prot.genes <- gene.all %>% filter(meta == "protein_coding")
+
+# Hallmarks gene signature lists 
+gdb.h <- sparrow::getMSigGeneSetDb("H", "mouse")
+```
+
+
+```{r, message=FALSE, warning=FALSE}
+DGEList_10mgpkg <- DGEList[,which(DGEList$samples$treatment_dose %in% c("DNL919__mgkg10", 
+                                                                        "Vehicle__mgkg00", 
+                                                                        "ATV_DNP02__mgkg10"))]
+
+DGEList_10mgpkg <- calcNormFactors(DGEList_10mgpkg)
+
+# Filter lowly expressed genes and non protein-coding genes
+keep <- edgeR::filterByExpr(y = DGEList_10mgpkg)
+DGEList_filt <- DGEList_10mgpkg[which(keep), ]
+DGEList_filt <- DGEList_filt[which(rownames(DGEList_filt) %in% prot.genes$feature_id), ]
+
+DGEList_filt$samples$group <- factor(DGEList_filt$samples$group, levels = c("Vehicle",
+                                                                            "ATV_DNP02",
+                                                                            "DNL919__mgkg10__days_01",
+                                                                            "DNL919__mgkg10__days_04",
+                                                                            "DNL919__mgkg10__days_07"))
+
+meta.data <- DGEList_filt$samples
+```
+
+```{r, message=FALSE, warning=FALSE}
+group <- DGEList_filt$samples$group
+batch <- DGEList_filt$samples$batch
+mm <- model.matrix(~0 + group + batch)
+
+y <- voom(DGEList_filt, mm, plot = T)
+```
+
+```{r, message=FALSE, warning=FALSE}
+plotMDS(y$E, col = as.numeric(DGEList_filt$samples$group))
+```
+
+
+
+
+
+```{r, message=FALSE, warning=FALSE}
+fit <- lmFit(y, mm)
+contr <- makeContrasts(DNP02vsVeh = groupATV_DNP02 - groupVehicle,
+                       Day1vsVeh = groupDNL919__mgkg10__days_01 - groupVehicle,
+                       Day4vsVeh = groupDNL919__mgkg10__days_04 - groupVehicle,
+                       Day7vsVeh = groupDNL919__mgkg10__days_07 - groupVehicle,
+                       Day1vsDNP02 = groupDNL919__mgkg10__days_01 - groupATV_DNP02,
+                       Day4vsDNP02 = groupDNL919__mgkg10__days_04 - groupATV_DNP02,
+                       Day7vsDNP02 = groupDNL919__mgkg10__days_07 - groupATV_DNP02,                       
+                       levels = colnames(coef(fit)))
+
+
+tmp <- contrasts.fit(fit, contr)
+tmp <- eBayes(tmp)
+
+### Perform pairwise comparisons for day 1, 4, and 7 against vehicle
+DNP02vsVeh.top.table <- topTable(tmp, sort.by = "P", n = Inf, coef = "DNP02vsVeh")
+Day1vsVeh.top.table <- topTable(tmp, sort.by = "P", n = Inf, coef = "Day1vsVeh")
+Day4vsVeh.top.table <- topTable(tmp, sort.by = "P", n = Inf, coef = "Day4vsVeh")
+Day7vsVeh.top.table <- topTable(tmp, sort.by = "P", n = Inf, coef = "Day7vsVeh")
+
+### Perform pairwise comparisons for day 1, 4, and 7 against DNP02
+Day1vsDNP02.top.table <- topTable(tmp, sort.by = "P", n = Inf, coef = "Day1vsDNP02")
+Day4vsDNP02.top.table <- topTable(tmp, sort.by = "P", n = Inf, coef = "Day4vsDNP02")
+Day7vsDNP02.top.table <- topTable(tmp, sort.by = "P", n = Inf, coef = "Day7vsDNP02")
+
+```
+
+# DE 10mg/kg vs Vehicle {.tabset}
+
+```{r, message=FALSE, warning=FALSE}
+DNP02vsVeh.top.table$diffex <- "NO"
+DNP02vsVeh.top.table$diffex[DNP02vsVeh.top.table$logFC > 0.5 & DNP02vsVeh.top.table$adj.P.Val < 0.05] <- "UP"
+DNP02vsVeh.top.table$diffex[DNP02vsVeh.top.table$logFC < -0.5 & DNP02vsVeh.top.table$adj.P.Val < 0.05] <- "DOWN"
+p1 <- ggplot(data = DNP02vsVeh.top.table, aes(x=logFC, y = -log10(adj.P.Val), col = diffex, label = name)) +
+          geom_point() + 
+          theme_bw() + 
+          xlim(c(-9, 9)) +
+          ylim(c(0, 15)) +
+          scale_color_manual(values = c("black")) + 
+          geom_vline(xintercept = c(-0.5, 0.5), col = "gray40", linetype = "dashed") + 
+          geom_hline(yintercept = -log10(0.05), col = "gray40", linetype = "dashed") + 
+          theme(legend.position = "none") + 
+          ggtitle("DNP02") +
+          labs(x = "log2FC vs Vehicle", y = "-log10(adj p value)")
+  # ggrepel::geom_label_repel(
+  #    label = ifelse(DNP02vsVeh.top.table$name %in% 
+  #                     c(), 
+  #                   DNP02vsVeh.top.table$name, NA), 
+  #    box.padding = unit(0.25, "lines"),
+  #    hjust = 1, max.overlaps = 100)
+
+Day1vsVeh.top.table$diffex <- "NO"
+Day1vsVeh.top.table$diffex[Day1vsVeh.top.table$logFC > 0.5 & Day1vsVeh.top.table$adj.P.Val < 0.05] <- "UP"
+Day1vsVeh.top.table$diffex[Day1vsVeh.top.table$logFC < -0.5 & Day1vsVeh.top.table$adj.P.Val < 0.05] <- "DOWN"
+p2 <- ggplot(data = Day1vsVeh.top.table, aes(x=logFC, y = -log10(adj.P.Val), col = diffex, label = name)) +
+          geom_point() + 
+          theme_bw() + 
+          xlim(c(-9, 9)) +
+          ylim(c(0, 15)) +
+          scale_color_manual(values = c("dodgerblue3", "black", "firebrick3")) + 
+          geom_vline(xintercept = c(-0.5, 0.5), col = "gray40", linetype = "dashed") + 
+          geom_hline(yintercept = -log10(0.05), col = "gray40", linetype = "dashed") + 
+          theme(legend.position = "none") + 
+          ggtitle("Day 1 ATV:TREM2") +
+          labs(x = "log2FC vs Vehicle", y = "-log10(adj p value)") 
+
+Day4vsVeh.top.table$diffex <- "NO"
+Day4vsVeh.top.table$diffex[Day4vsVeh.top.table$logFC > 0.5 & Day4vsVeh.top.table$adj.P.Val < 0.05] <- "UP"
+Day4vsVeh.top.table$diffex[Day4vsVeh.top.table$logFC < -0.5 & Day4vsVeh.top.table$adj.P.Val < 0.05] <- "DOWN"
+p3 <- ggplot(data = Day4vsVeh.top.table, aes(x=logFC, y = -log10(adj.P.Val), col = diffex, label = name)) +
+          geom_point() + 
+          theme_bw() + 
+          xlim(c(-9, 9)) +
+          ylim(c(0, 15)) +
+          scale_color_manual(values = c("dodgerblue3", "black", "firebrick3")) + 
+          geom_vline(xintercept = c(-0.5, 0.5), col = "gray40", linetype = "dashed") + 
+          geom_hline(yintercept = -log10(0.05), col = "gray40", linetype = "dashed") + 
+          theme(legend.position = "none") + 
+          ggtitle("Day 4 ATV:TREM2") +
+          labs(x = "log2FC vs Vehicle", y = "-log10(adj p value)") 
+
+Day7vsVeh.top.table$diffex <- "NO"
+Day7vsVeh.top.table$diffex[Day7vsVeh.top.table$logFC > 0.5 & Day7vsVeh.top.table$adj.P.Val < 0.05] <- "UP"
+Day7vsVeh.top.table$diffex[Day7vsVeh.top.table$logFC < -0.5 & Day7vsVeh.top.table$adj.P.Val < 0.05] <- "DOWN"
+p4 <- ggplot(data = Day7vsVeh.top.table, aes(x=logFC, y = -log10(adj.P.Val), col = diffex, label = name)) +
+          geom_point() + 
+          theme_bw() + 
+          xlim(c(-9, 9)) +
+          ylim(c(0, 15)) +
+          scale_color_manual(values = c("dodgerblue3", "black", "firebrick3")) + 
+          geom_vline(xintercept = c(-0.5, 0.5), col = "gray40", linetype = "dashed") + 
+          geom_hline(yintercept = -log10(0.05), col = "gray40", linetype = "dashed") + 
+          theme(legend.position = "none") + 
+          ggtitle("Day 7 ATV:TREM2") +
+          labs(x = "log2FC vs Vehicle", y = "-log10(adj p value)") 
+```
+
+
+```{r, fig.width=5, fig.height=5, message=FALSE, warning=FALSE}
+gridExtra::grid.arrange(p1, p2, p3, p4, nrow = 2)
+```
+
+## Vehicle
+```{r, warning = FALSE, message= FALSE}
+DT::datatable(DNP02vsVeh.top.table %>% select(c(name, logFC, t, P.Value, adj.P.Val)), filter = "bottom")
+```
+
+
+## Day 1
+```{r, warning = FALSE, message= FALSE}
+DT::datatable(Day1vsVeh.top.table %>% select(c(name, logFC, t, P.Value, adj.P.Val)), filter = "bottom")
+```
+
+## Day 4
+```{r, warning = FALSE, message= FALSE}
+DT::datatable(Day4vsVeh.top.table %>% select(c(name, logFC, t, P.Value, adj.P.Val)), filter = "bottom")
+```
+
+
+## Day 7
+```{r, warning = FALSE, message= FALSE}
+DT::datatable(Day7vsVeh.top.table %>% select(c(name, logFC, t, P.Value, adj.P.Val)), filter = "bottom")
+```
+
+
+# DE 10mg/kg vs ATV:ISO {.tabset}
+
+```{r, message=FALSE, warning=FALSE}
+Day1vsDNP02.top.table$diffex <- "NO"
+Day1vsDNP02.top.table$diffex[Day1vsDNP02.top.table$logFC > 0.5 & Day1vsDNP02.top.table$adj.P.Val < 0.05] <- "UP"
+Day1vsDNP02.top.table$diffex[Day1vsDNP02.top.table$logFC < -0.5 & Day1vsDNP02.top.table$adj.P.Val < 0.05] <- "DOWN"
+p2 <- ggplot(data = Day1vsDNP02.top.table, aes(x=logFC, y = -log10(adj.P.Val), col = diffex, label = name)) +
+          geom_point() + 
+          theme_bw() + 
+          xlim(c(-9, 9)) +
+          ylim(c(0, 15)) +
+          scale_color_manual(values = c("dodgerblue3", "black", "firebrick3")) + 
+          geom_vline(xintercept = c(-0.5, 0.5), col = "gray40", linetype = "dashed") + 
+          geom_hline(yintercept = -log10(0.05), col = "gray40", linetype = "dashed") + 
+          theme(legend.position = "none") + 
+          ggtitle("Day 1 ATV:TREM2") +
+          labs(x = "log2FC vs ATV:ISO", y = "-log10(adj p value)") 
+
+Day4vsDNP02.top.table$diffex <- "NO"
+Day4vsDNP02.top.table$diffex[Day4vsDNP02.top.table$logFC > 0.5 & Day4vsDNP02.top.table$adj.P.Val < 0.05] <- "UP"
+Day4vsDNP02.top.table$diffex[Day4vsDNP02.top.table$logFC < -0.5 & Day4vsDNP02.top.table$adj.P.Val < 0.05] <- "DOWN"
+p3 <- ggplot(data = Day4vsDNP02.top.table, aes(x=logFC, y = -log10(adj.P.Val), col = diffex, label = name)) +
+          geom_point() + 
+          theme_bw() + 
+          xlim(c(-9, 9)) +
+          ylim(c(0, 15)) +
+          scale_color_manual(values = c("dodgerblue3", "black", "firebrick3")) + 
+          geom_vline(xintercept = c(-0.5, 0.5), col = "gray40", linetype = "dashed") + 
+          geom_hline(yintercept = -log10(0.05), col = "gray40", linetype = "dashed") + 
+          theme(legend.position = "none") + 
+          ggtitle("Day 4 ATV:TREM2") +
+          labs(x = "log2FC vs ATV:ISO", y = "-log10(adj p value)") 
+
+Day7vsDNP02.top.table$diffex <- "NO"
+Day7vsDNP02.top.table$diffex[Day7vsDNP02.top.table$logFC > 0.5 & Day7vsDNP02.top.table$adj.P.Val < 0.05] <- "UP"
+Day7vsDNP02.top.table$diffex[Day7vsDNP02.top.table$logFC < -0.5 & Day7vsDNP02.top.table$adj.P.Val < 0.05] <- "DOWN"
+p4 <- ggplot(data = Day7vsDNP02.top.table, aes(x=logFC, y = -log10(adj.P.Val), col = diffex, label = name)) +
+          geom_point() + 
+          theme_bw() + 
+          xlim(c(-9, 9)) +
+          ylim(c(0, 15)) +
+          scale_color_manual(values = c("dodgerblue3", "black", "firebrick3")) + 
+          geom_vline(xintercept = c(-0.5, 0.5), col = "gray40", linetype = "dashed") + 
+          geom_hline(yintercept = -log10(0.05), col = "gray40", linetype = "dashed") + 
+          theme(legend.position = "none") + 
+          ggtitle("Day 7 ATV:TREM2") +
+          labs(x = "log2FC vs ATV:ISO", y = "-log10(adj p value)") 
+```
+
+
+```{r, fig.width=7.5, fig.height=2.5, message=FALSE, warning=FALSE}
+gridExtra::grid.arrange(p2, p3, p4, nrow = 1)
+```
+
+
+## Day 1
+```{r, warning = FALSE, message= FALSE}
+DT::datatable(Day1vsDNP02.top.table %>% select(c(name, logFC, t, P.Value, adj.P.Val)), filter = "bottom")
+```
+
+## Day 4
+```{r, warning = FALSE, message= FALSE}
+DT::datatable(Day4vsVeh.top.table %>% select(c(name, logFC, t, P.Value, adj.P.Val)), filter = "bottom")
+```
+
+## Day 7
+```{r, warning = FALSE, message= FALSE}
+DT::datatable(Day7vsVeh.top.table %>% select(c(name, logFC, t, P.Value, adj.P.Val)), filter = "bottom")
+```
+
+# GSEA 10mg/kg vs Vehicle
+```{r, message=FALSE, warning=FALSE}
+day1gsea <- ffsea(x = Day1vsVeh.top.table, rank_by = "t", methods = "fgsea", fsets = gdb.h)
+
+day1gs_stats_all <- day1gsea %>% 
+    tidy() %>% 
+    arrange(desc(NES)) %>% 
+    transmute(name, n, NES, pval, padj, mean.logFC, mean.t, leadingEdge)
+
+day1gs_stats <- day1gsea %>% 
+    tidy() %>% 
+    arrange(desc(NES)) %>% 
+    filter(padj < 0.05) %>% 
+    transmute(name, n, NES, pval, padj, mean.logFC, mean.t, leadingEdge)
+
+day1gs_stats <- day1gs_stats %>% mutate(direction = ifelse(NES>0, "up", "down"))
+```
+
+```{r, message=FALSE, warning=FALSE}
+DT::datatable(day1gs_stats_all %>% select(c(name, n, NES, padj)), filter = "bottom", caption = "Hallmark pathways affected at Day1 DNL 919 treatment")
+```
+
+```{r, fig.width=10,fig.height=4}
+ggplot(day1gs_stats, aes(x = reorder(name, NES), y = NES, fill = direction)) +
+  geom_bar(stat = "identity") +
+  coord_flip() + 
+  theme_bw() +
+  scale_fill_manual(values = c("dodgerblue3", "firebrick3")) +
+  theme(legend.position = "none") +
+  labs(x = "", y = "GSEA Normalized Enrichment Score")
+  
+```
+
+# Metabolic pathways vs Vehicle
+```{r, message=FALSE, warning=FALSE}
+##Get log2(cpm) and sample info. Arrange samples by group.
+norm.counts <- log2(cpm(DGEList_filt) + 1)
+sample_annotation <- DGEList_filt$samples %>% arrange(group)
+
+
+##Get the genes from each pathway in the GSEA
+oxphos_gsea_genes <- day1gs_stats[which(day1gs_stats$name == "HALLMARK_OXIDATIVE_PHOSPHORYLATION"),]$leadingEdge %>% unlist() 
+glycolysis_gsea_genes <- day1gs_stats[which(day1gs_stats$name == "HALLMARK_GLYCOLYSIS"),]$leadingEdge %>% unlist() 
+
+##Make an expression matrix of only the top 15 genes from each pathway
+metabolism.counts <- norm.counts[c(oxphos_gsea_genes[2:16], glycolysis_gsea_genes[1:15]), rownames(sample_annotation)]
+gene_names <- DGEList_filt$genes %>% select(c(feature_id, name))
+
+##Change rownames to common gene symbols
+rownames(metabolism.counts) <- gene_names[rownames(metabolism.counts),2]
+
+
+gene_annotation <- data.frame(row.names = rownames(metabolism.counts), pathway = c(rep("OXPhos", 15), rep("Glycolysis", 15)))
+column_annotation <- data.frame(row.names = rownames(sample_annotation), group = sample_annotation$group)
+
+annoCol<-list(pathway=c(OXPhos="Gray20", Glycolysis="Gray60"),
+              group = c(Vehicle = "#1B9E77", 
+                        ATV_DNP02 = "#D95F02", 
+                        DNL919__mgkg10__days_01 = "#7570B3", 
+                        DNL919__mgkg10__days_04 = "#E7298A",
+                        DNL919__mgkg10__days_07 = "#66A61E"))
+```
+
+```{r, fig.width=8, fig.height=4, message=FALSE, warning=FALSE}
+pheatmap::pheatmap(mat = metabolism.counts,
+                   cluster_rows = F,
+                   cluster_cols = F,
+                   scale= "row",
+                   gaps_row = c(15),
+                   gaps_col = c(6, 14, 22, 30), 
+                   show_colnames = F, 
+                   annotation_row = gene_annotation,
+                   annotation_col = column_annotation,
+                   annotation_colors = annoCol,
+                   annotation_names_row = F,
+                   annotation_names_col = F, border_color = NA, 
+                   main = "Metabolism DNL919 (hTRME2 KI Mice)", 
+                   color = colorRampPalette(colors = c("Blue4", "White", "Red4"))((100)))
+```
+
+# Other activation signatures vs Vehicle
+```{r, message=FALSE, warning=FALSE}
+##Get the genes from each pathway in the GSEA
+allograft_gsea_genes <- day1gs_stats[which(day1gs_stats$name == "HALLMARK_ALLOGRAFT_REJECTION"),]$leadingEdge %>% unlist() 
+
+##Make an expression matrix of only the top 15 genes from each pathway
+allograft.counts <- norm.counts[allograft_gsea_genes[1:25], rownames(sample_annotation)]
+
+##Change rownames to common gene symbols
+rownames(allograft.counts) <- gene_names[rownames(allograft.counts),2]
+
+annoCol2<-list(group = c(Vehicle = "#1B9E77", 
+                        ATV_DNP02 = "#D95F02", 
+                        DNL919__mgkg10__days_01 = "#7570B3", 
+                        DNL919__mgkg10__days_04 = "#E7298A",
+                        DNL919__mgkg10__days_07 = "#66A61E"))
+```
+
+```{r, fig.width=8, fig.height=4, message=FALSE, warning=FALSE}
+pheatmap::pheatmap(mat = allograft.counts,
+                   cluster_rows = T,
+                   cluster_cols = F,
+                   scale= "row",
+                   gaps_col = c(6, 14, 22, 30), 
+                   show_colnames = F, 
+                   treeheight_row = 0,
+                   annotation_col = column_annotation,
+                   annotation_colors = annoCol,
+                   annotation_names_row = F,
+                   annotation_names_col = F, border_color = NA, 
+                   main = "Allograft Rejection DNL919 (hTRME2 KI Mice)", 
+                   color = colorRampPalette(colors = c("Blue4", "White", "Red4"))((100)))
+```
+
+
+```{r, message=FALSE, warning=FALSE}
+##Get the genes from each pathway in the GSEA
+G2M_gsea_genes <- day1gs_stats[which(day1gs_stats$name == "HALLMARK_G2M_CHECKPOINT"),]$leadingEdge %>% unlist() 
+
+##Make an expression matrix of only the top 15 genes from each pathway
+G2M.counts <- norm.counts[G2M_gsea_genes[1:25], rownames(sample_annotation)]
+
+##Change rownames to common gene symbols
+rownames(G2M.counts) <- gene_names[rownames(G2M.counts),2]
+
+annoCol2<-list(group = c(Vehicle = "#1B9E77", 
+                        ATV_DNP02 = "#D95F02", 
+                        DNL919__mgkg10__days_01 = "#7570B3", 
+                        DNL919__mgkg10__days_04 = "#E7298A",
+                        DNL919__mgkg10__days_07 = "#66A61E"))
+```
+
+```{r, fig.width=8, fig.height=4, message=FALSE, warning=FALSE}
+pheatmap::pheatmap(mat = G2M.counts,
+                   cluster_rows = T,
+                   cluster_cols = F,
+                   scale= "row",
+                   gaps_col = c(6, 14, 22, 30), 
+                   show_colnames = F, 
+                   treeheight_row = 0,
+                   annotation_col = column_annotation,
+                   annotation_colors = annoCol,
+                   annotation_names_row = F,
+                   annotation_names_col = F, border_color = NA, 
+                   main = "G2M Checkpoint DNL919 (hTRME2 KI Mice)", 
+                   color = colorRampPalette(colors = c("Blue4", "White", "Red4"))((100)))
+```
+
+
+# GSEA 10mg/kg vs ATV:ISO {.tabset}
+
+## day 1
+```{r, message=FALSE, warning=FALSE}
+day1gsea <- ffsea(x = Day1vsVeh.top.table, rank_by = "t", methods = "fgsea", fsets = gdb.h)
+
+day1gs_stats_all <- day1gsea %>% 
+    tidy() %>% 
+    arrange(desc(NES)) %>% 
+    transmute(name, n, NES, pval, padj, mean.logFC, mean.t, leadingEdge)
+
+day1gs_stats <- day1gsea %>% 
+    tidy() %>% 
+    arrange(desc(NES)) %>% 
+    filter(padj < 0.05) %>% 
+    transmute(name, n, NES, pval, padj, mean.logFC, mean.t, leadingEdge)
+
+day1gs_stats <- day1gs_stats %>% mutate(direction = ifelse(NES>0, "up", "down"))
+```
+
+```{r, message=FALSE, warning=FALSE}
+DT::datatable(day1gs_stats_all %>% select(c(name, n, NES, padj)), filter = "bottom", caption = "Hallmark pathways affected at Day1 DNL 919 treatment vs ATV:ISO")
+```
+
+```{r, fig.width=10,fig.height=4}
+ggplot(day1gs_stats, aes(x = reorder(name, NES), y = NES, fill = direction)) +
+  geom_bar(stat = "identity") +
+  coord_flip() + 
+  theme_bw() +
+  scale_fill_manual(values = c("dodgerblue3", "firebrick3")) +
+  theme(legend.position = "none") +
+  labs(x = "", y = "GSEA Normalized Enrichment Score")
+  
+```
+
+## day 4
+```{r, message=FALSE, warning=FALSE}
+day4gsea <- ffsea(x = Day4vsVeh.top.table, rank_by = "t", methods = "fgsea", fsets = gdb.h)
+
+day4gs_stats_all <- day4gsea %>% 
+    tidy() %>% 
+    arrange(desc(NES)) %>% 
+    transmute(name, n, NES, pval, padj, mean.logFC, mean.t, leadingEdge)
+
+day4gs_stats <- day4gsea %>% 
+    tidy() %>% 
+    arrange(desc(NES)) %>% 
+    filter(padj < 0.05) %>% 
+    transmute(name, n, NES, pval, padj, mean.logFC, mean.t, leadingEdge)
+
+day4gs_stats <- day4gs_stats %>% mutate(direction = ifelse(NES>0, "up", "down"))
+```
+
+```{r, message=FALSE, warning=FALSE}
+DT::datatable(day4gs_stats_all %>% select(c(name, n, NES, padj)), filter = "bottom", caption = "Hallmark pathways affected at Day4 DNL 919 treatment vs ATV:ISO")
+```
+
+```{r, fig.width=10,fig.height=4}
+ggplot(day4gs_stats, aes(x = reorder(name, NES), y = NES, fill = direction)) +
+  geom_bar(stat = "identity") +
+  coord_flip() + 
+  theme_bw() +
+  scale_fill_manual(values = c("dodgerblue3", "firebrick3")) +
+  theme(legend.position = "none") +
+  labs(x = "", y = "GSEA Normalized Enrichment Score")
+  
+```
+
+## day 7
+```{r, message=FALSE, warning=FALSE}
+day7gsea <- ffsea(x = Day7vsVeh.top.table, rank_by = "t", methods = "fgsea", fsets = gdb.h)
+
+day7gs_stats_all <- day7gsea %>% 
+    tidy() %>% 
+    arrange(desc(NES)) %>% 
+    transmute(name, n, NES, pval, padj, mean.logFC, mean.t, leadingEdge)
+
+day7gs_stats <- day7gsea %>% 
+    tidy() %>% 
+    arrange(desc(NES)) %>% 
+    filter(padj < 0.05) %>% 
+    transmute(name, n, NES, pval, padj, mean.logFC, mean.t, leadingEdge)
+
+day7gs_stats <- day7gs_stats %>% mutate(direction = ifelse(NES>0, "up", "down"))
+```
+
+```{r, message=FALSE, warning=FALSE}
+DT::datatable(day7gs_stats_all %>% select(c(name, n, NES, padj)), filter = "bottom", caption = "Hallmark pathways affected at Day7 DNL 919 treatment vs ATV:ISO")
+```
+
+```{r, fig.width=10,fig.height=4}
+ggplot(day7gs_stats, aes(x = reorder(name, NES), y = NES, fill = direction)) +
+  geom_bar(stat = "identity") +
+  coord_flip() + 
+  theme_bw() +
+  scale_fill_manual(values = c("dodgerblue3", "firebrick3")) +
+  theme(legend.position = "none") +
+  labs(x = "", y = "GSEA Normalized Enrichment Score")
+  
+```
+
+# Metabolic pathways vs ATV:ISO
+```{r, message=FALSE, warning=FALSE}
+##Get log2(cpm) and sample info. Arrange samples by group.
+norm.counts <- log2(cpm(DGEList_filt) + 1)
+sample_annotation <- DGEList_filt$samples %>% arrange(group)
+
+
+##Get the genes from each pathway in the GSEA
+oxphos_gsea_genes <- day1gs_stats[which(day1gs_stats$name == "HALLMARK_OXIDATIVE_PHOSPHORYLATION"),]$leadingEdge %>% unlist() 
+glycolysis_gsea_genes <- day1gs_stats[which(day1gs_stats$name == "HALLMARK_GLYCOLYSIS"),]$leadingEdge %>% unlist() 
+
+##Make an expression matrix of only the top 15 genes from each pathway
+metabolism.counts <- norm.counts[c(oxphos_gsea_genes[2:16], glycolysis_gsea_genes[1:15]), rownames(sample_annotation)]
+gene_names <- DGEList_filt$genes %>% select(c(feature_id, name))
+
+##Change rownames to common gene symbols
+rownames(metabolism.counts) <- gene_names[rownames(metabolism.counts),2]
+
+
+gene_annotation <- data.frame(row.names = rownames(metabolism.counts), pathway = c(rep("OXPhos", 15), rep("Glycolysis", 15)))
+column_annotation <- data.frame(row.names = rownames(sample_annotation), group = sample_annotation$group)
+
+annoCol<-list(pathway=c(OXPhos="Gray20", Glycolysis="Gray60"),
+              group = c(Vehicle = "#1B9E77", 
+                        ATV_DNP02 = "#D95F02", 
+                        DNL919__mgkg10__days_01 = "#7570B3", 
+                        DNL919__mgkg10__days_04 = "#E7298A",
+                        DNL919__mgkg10__days_07 = "#66A61E"))
+```
+
+```{r, fig.width=8, fig.height=4, message=FALSE, warning=FALSE}
+pheatmap::pheatmap(mat = metabolism.counts,
+                   cluster_rows = F,
+                   cluster_cols = F,
+                   scale= "row",
+                   gaps_row = c(15),
+                   gaps_col = c(6, 14, 22, 30), 
+                   show_colnames = F, 
+                   annotation_row = gene_annotation,
+                   annotation_col = column_annotation,
+                   annotation_colors = annoCol,
+                   annotation_names_row = F,
+                   annotation_names_col = F, border_color = NA, 
+                   main = "Metabolism DNL919 (hTRME2 KI Mice)", 
+                   color = colorRampPalette(colors = c("Blue4", "White", "Red4"))((100)))
+```
+
+# Other activation signatures vs ATV:ISO
+```{r, message=FALSE, warning=FALSE}
+##Get the genes from each pathway in the GSEA
+allograft_gsea_genes <- day1gs_stats[which(day1gs_stats$name == "HALLMARK_ALLOGRAFT_REJECTION"),]$leadingEdge %>% unlist() 
+
+##Make an expression matrix of only the top 15 genes from each pathway
+allograft.counts <- norm.counts[allograft_gsea_genes[1:25], rownames(sample_annotation)]
+
+##Change rownames to common gene symbols
+rownames(allograft.counts) <- gene_names[rownames(allograft.counts),2]
+
+annoCol2<-list(group = c(Vehicle = "#1B9E77", 
+                        ATV_DNP02 = "#D95F02", 
+                        DNL919__mgkg10__days_01 = "#7570B3", 
+                        DNL919__mgkg10__days_04 = "#E7298A",
+                        DNL919__mgkg10__days_07 = "#66A61E"))
+```
+
+```{r, fig.width=8, fig.height=4, message=FALSE, warning=FALSE}
+pheatmap::pheatmap(mat = allograft.counts,
+                   cluster_rows = T,
+                   cluster_cols = F,
+                   scale= "row",
+                   gaps_col = c(6, 14, 22, 30), 
+                   show_colnames = F, 
+                   treeheight_row = 0,
+                   annotation_col = column_annotation,
+                   annotation_colors = annoCol,
+                   annotation_names_row = F,
+                   annotation_names_col = F, border_color = NA, 
+                   main = "Allograft Rejection DNL919 (hTRME2 KI Mice)", 
+                   color = colorRampPalette(colors = c("Blue4", "White", "Red4"))((100)))
+```
+
+
+```{r, message=FALSE, warning=FALSE}
+##Get the genes from each pathway in the GSEA
+G2M_gsea_genes <- day1gs_stats[which(day1gs_stats$name == "HALLMARK_G2M_CHECKPOINT"),]$leadingEdge %>% unlist() 
+
+##Make an expression matrix of only the top 15 genes from each pathway
+G2M.counts <- norm.counts[G2M_gsea_genes[1:25], rownames(sample_annotation)]
+
+##Change rownames to common gene symbols
+rownames(G2M.counts) <- gene_names[rownames(G2M.counts),2]
+
+annoCol2<-list(group = c(Vehicle = "#1B9E77", 
+                        ATV_DNP02 = "#D95F02", 
+                        DNL919__mgkg10__days_01 = "#7570B3", 
+                        DNL919__mgkg10__days_04 = "#E7298A",
+                        DNL919__mgkg10__days_07 = "#66A61E"))
+```
+
+```{r, fig.width=8, fig.height=4, message=FALSE, warning=FALSE}
+pheatmap::pheatmap(mat = G2M.counts,
+                   cluster_rows = T,
+                   cluster_cols = F,
+                   scale= "row",
+                   gaps_col = c(6, 14, 22, 30), 
+                   show_colnames = F, 
+                   treeheight_row = 0,
+                   annotation_col = column_annotation,
+                   annotation_colors = annoCol,
+                   annotation_names_row = F,
+                   annotation_names_col = F, border_color = NA, 
+                   main = "G2M Checkpoint DNL919 (hTRME2 KI Mice)", 
+                   color = colorRampPalette(colors = c("Blue4", "White", "Red4"))((100)))
+```
+
+
+# Individual Gene plots
+```{r, message=FALSE, warning=FALSE}
+selected_counts <- norm.counts[c("ENSMUSG00000002602","ENSMUSG00000030789", "ENSMUSG00000050335", "ENSMUSG00000041736"), rownames(sample_annotation)]
+rownames(selected_counts) <- gene_names[rownames(selected_counts),2]
+selected_counts <- as.data.frame(t(selected_counts))
+
+selected_counts$group <- plyr::mapvalues(sample_annotation$group, 
+                                         from = unique(sample_annotation$group), 
+                                         to = c("Vehicle", "ATV:ISO", "day 1", "day 4", "day 7"))
+
+selected_counts$treatment <- plyr::mapvalues(sample_annotation$treatment, 
+                                         from = unique(sample_annotation$treatment), 
+                                         to = c("Vehicle", "ATV:ISO", "ATV:TREM2"))
+
+selected_counts$sex <- sample_annotation$sex
+
+```
+
+## Phagocytosis Genes
+```{r, message=FALSE, warning=FALSE}
+axl <- ggplot(selected_counts, aes(x = group, y = Axl)) +
+  geom_bar(stat = "summary", fun = "mean", aes(fill = "gray30")) +
+  stat_summary(fun.data = mean_se, geom = "errorbar", width = 0.25) +
+  geom_dotplot(binaxis = "y", aes(fill = treatment), position = position_jitter(width = 0.01, height = 0.1), dotsize = 1) +
+  theme_classic() +
+  scale_fill_manual(values = c("gray20", "#FD8008", "gray90", "white")) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1)) +
+  theme(legend.position = "none", axis.title.x = element_blank()) +
+  labs(y = "log2 (cpm + 1)") + 
+  ggtitle("Axl")
+
+itgax <- ggplot(selected_counts, aes(x = group, y = Itgax)) +
+  geom_bar(stat = "summary", fun = "mean", aes(fill = "gray30")) +
+  stat_summary(fun.data = mean_se, geom = "errorbar", width = 0.25) +
+  geom_dotplot(binaxis = "y", aes(fill = treatment), position = position_jitter(width = 0.01, height = 0.1), dotsize = 1) +
+  theme_classic() +
+  scale_fill_manual(values = c("gray20", "#FD8008", "gray90", "white")) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1)) +
+  theme(legend.position = "none", axis.title.x = element_blank()) +
+  labs(y = "log2 (cpm + 1)") + 
+  ggtitle("Itgax")
+
+lgals3 <- ggplot(selected_counts, aes(x = group, y = Lgals3)) +
+  geom_bar(stat = "summary", fun = "mean", aes(fill = "gray30")) +
+  stat_summary(fun.data = mean_se, geom = "errorbar", width = 0.25) +
+  geom_dotplot(binaxis = "y", aes(fill = treatment), position = position_jitter(width = 0.01, height = 0.1), dotsize = 1.2) +
+  theme_classic() +
+  scale_fill_manual(values = c("gray20", "#FD8008", "gray90", "white")) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1)) +
+  theme(legend.position = "none", axis.title.x = element_blank()) +
+  labs(y = "log2 (cpm + 1)") + 
+  ggtitle("Lgals3")
+
+
+# Faceted by sex
+axl_faceted <- ggplot(selected_counts, aes(x = group, y = Axl)) +
+  geom_bar(stat = "summary", fun = "mean", aes(fill = "gray30")) +
+  stat_summary(fun.data = mean_se, geom = "errorbar", width = 0.25) +
+  geom_dotplot(binaxis = "y", aes(fill = treatment), position = position_jitter(width = 0.01, height = 0.1), dotsize = 1) +
+  theme_classic() +
+  scale_fill_manual(values = c("gray20", "#FD8008", "gray90", "white")) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1)) +
+  theme(legend.position = "none", axis.title.x = element_blank()) +
+  labs(y = "log2 (cpm + 1)") + 
+  ggtitle("Axl") +
+  facet_wrap(~sex)
+
+itgax_faceted <- ggplot(selected_counts, aes(x = group, y = Itgax)) +
+  geom_bar(stat = "summary", fun = "mean", aes(fill = "gray30")) +
+  stat_summary(fun.data = mean_se, geom = "errorbar", width = 0.25) +
+  geom_dotplot(binaxis = "y", aes(fill = treatment), position = position_jitter(width = 0.01, height = 0.1), dotsize = 1) +
+  theme_classic() +
+  scale_fill_manual(values = c("gray20", "#FD8008", "gray90", "white")) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1)) +
+  theme(legend.position = "none", axis.title.x = element_blank()) +
+  labs(y = "log2 (cpm + 1)") + 
+  ggtitle("Itgax") +
+  facet_wrap(~sex)
+
+lgals3_faceted <- ggplot(selected_counts, aes(x = group, y = Lgals3)) +
+  geom_bar(stat = "summary", fun = "mean", aes(fill = "gray30")) +
+  stat_summary(fun.data = mean_se, geom = "errorbar", width = 0.25) +
+  geom_dotplot(binaxis = "y", aes(fill = treatment), position = position_jitter(width = 0.01, height = 0.1), dotsize = 1.2) +
+  theme_classic() +
+  scale_fill_manual(values = c("gray20", "#FD8008", "gray90", "white")) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1)) +
+  theme(legend.position = "none", axis.title.x = element_blank()) +
+  labs(y = "log2 (cpm + 1)") + 
+  ggtitle("Lgals3") +
+  facet_wrap(~sex)
+
+```
+
+```{r, message=FALSE, warning=FALSE, error=FALSE, echo=FALSE, fig.width=7, fig.height=2.75}
+gridExtra::grid.arrange(axl, itgax, lgals3, nrow = 1)
+```
+
+Interestingly, Axl levels in response to ATV:ISO were sex-dependent. Namely, females have an increase in Axl levels in response to Axl, while males do not (except for one outlier). 
+
+```{r, message=FALSE, warning=FALSE, error=FALSE, echo=FALSE, fig.width=12, fig.height=2.75}
+gridExtra::grid.arrange(axl_faceted, itgax_faceted, lgals3_faceted, nrow = 1)
+```
+
+## Tspo
+```{r, fig.width=2.34, fig.height=2.75, message=FALSE, warning=FALSE}
+ggplot(selected_counts, aes(x = group, y = Tspo)) +
+  geom_bar(stat = "summary", fun = "mean", aes(fill = "gray30")) +
+  stat_summary(fun.data = mean_se, geom = "errorbar", width = 0.25) +
+  geom_dotplot(binaxis = "y", aes(fill = treatment), position = position_jitter(width = 0.01, height = 0.1), dotsize = 1) +
+  theme_classic() +
+  scale_fill_manual(values = c("gray20", "#FD8008", "gray90", "white")) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1)) +
+  theme(legend.position = "none", axis.title.x = element_blank()) +
+  labs(y = "log2 (cpm + 1)") + 
+  ggtitle("Tspo") +
+  coord_cartesian(ylim=c(5,9))
+```
+
+```{r, fig.width=4.5, fig.height=2.75, message=FALSE, warning=FALSE}
+ggplot(selected_counts, aes(x = group, y = Tspo)) +
+  geom_bar(stat = "summary", fun = "mean", aes(fill = "gray30")) +
+  stat_summary(fun.data = mean_se, geom = "errorbar", width = 0.25) +
+  geom_dotplot(binaxis = "y", aes(fill = treatment), position = position_jitter(width = 0.01, height = 0.1), dotsize = 1) +
+  theme_classic() +
+  scale_fill_manual(values = c("gray20", "#FD8008", "gray90", "white")) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1)) +
+  theme(legend.position = "none", axis.title.x = element_blank()) +
+  labs(y = "log2 (cpm + 1)") + 
+  ggtitle("Tspo") +
+  coord_cartesian(ylim=c(5,9)) +
+  facet_wrap(~sex)
+```

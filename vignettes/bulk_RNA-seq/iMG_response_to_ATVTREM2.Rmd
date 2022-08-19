@@ -1,0 +1,358 @@
+---
+title: "iMicroglia Response to ATV:TREM2"
+author: "Steve Lianoglou"
+date: '`r format(Sys.Date(), "%B %d, %Y")`'
+output:
+  html_document:
+    code_folding: hide
+    toc: true
+    toc_depth: 2
+editor_options: 
+  chunk_output_type: inline
+vignette: >
+  %\VignetteIndexEntry{iMicroglia Response to ATV:TREM2}
+  %\VignetteEncoding{UTF-8}
+  %\VignetteEngine{knitr::rmarkdown}
+  ###
+---
+
+```{r setup, include=FALSE, cache=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, cache = FALSE, 
+                      message = FALSE, collapse = TRUE, comment = "#>")
+
+# Setup the directory to save output files
+res.dir <- "~/tmp/paperfiles"
+res.dir <- tempdir()
+stopifnot(dir.exists(res.dir))
+```
+
+## Overview
+
+Presentation of IMG rnaseq data via a more supervised heatmap approach.
+We'll only show the genes pertinent to gene sets of interest, which would
+remove the need to show both heatmap and density shift plots.
+
+This report requires functionality from the FacileIncubator version >= 0.0.7,
+you can get it like so:
+
+```
+BiocManager::install("facilebio/FacileIncubator")
+```
+
+`hm2` is the version of the heatmap that was presented in the paper
+
+## Setup
+
+```{r, message=FALSE, warning = FALSE}
+devtools::load_all(".")
+library(FacileBiocData)
+library(FacileAnalysis)
+library(FacileIncubator)
+library(dplyr)
+library(ComplexHeatmap)
+library(plotly) # This will load ggplot2, too
+
+theme_set(theme_bw(base_size = 16))
+colors.all <- img_color_palette()
+```
+
+```{r}
+samples.img <- img_samples() %>% with_sample_covariates()
+genes.all <- features(fds(samples.img))
+
+class(samples.img)
+genes.pc <- filter(genes.all, meta == "protein_coding")
+```
+
+## Differential Expression
+
+I run two different ANOVA analyses between different groups of samples.
+The `fdgd()` function implements the default/suggestd expression filtering
+mechanism, and I run these analyses mostly so I can identify genes that are
+minimally expressed across any of the comparisons I will make downstream.
+
+I then pull out the universe of genes from the result and specifically use those
+downstream.
+
+```{r}
+class(samples.img)
+
+anovas <- list(
+  ab = samples.img %>% 
+    filter(treatment_group == "antibody", QC_pass==T) %>% 
+    flm_def("group", batch = "batch") %>% 
+    fdge(filter_universe = genes.pc),
+  stim = samples.img %>% 
+    filter(treatment_group == "stimulus", QC_pass==T) %>% 
+    flm_def("group", batch = "batch") %>% 
+    fdge(filter_universe = genes.pc))
+
+# Pull out the genes used in the two different ANOVA analyses, and combine then
+# into a universe of expressed genes in the Ab-treated samples, as well as the
+# "stimulus" treated ones.
+genes.use <- lapply(names(anovas), function(wut) {
+  anovas[[wut]] %>% 
+    features() %>% 
+    mutate(tgroup = wut, .before = 1L) %>% 
+    select(tgroup, feature_id, symbol, meta, pval, padj, F)
+}) %>% bind_rows() %>% 
+  arrange(pval) %>% 
+  distinct(feature_id, .keep_all = TRUE)
+```
+
+### Identify DE genes of pairwise comparison, only 96 hrs timepoint used: 
+   1) DNL919 vs RSV-ATV
+   2) 188 vs RSV
+   3) MCSF vs PBS
+   4) TGFb vs PBS
+   5) LPS vs PBS
+   6) IFNg vs PBS
+   
+   
+```{r}
+comparison.table <- data.frame(
+  comparison = c("DNL919 vs RSV-ATV", "188 vs RSV", "MCSF vs PBS",
+                 "TGFb vs PBS", "LPS vs PBS", "IFNg vs PBS"),
+  
+  numerator = c("DNL919__hrs_96", "ab188__hrs_96", "MCSF__hrs_96", 
+                "TGFb__hrs_96", "LPS__hrs_96","IFNg__hrs_96"),
+  
+  denominator = c("ATV_RSV__hrs_96", "RSV__hrs_96","Vehicle__hrs_96",
+                  "Vehicle__hrs_96","Vehicle__hrs_96","Vehicle__hrs_96"),
+  
+  treatment_group = c("antibody","antibody","stimulus",
+                      "stimulus","stimulus","stimulus"),
+  
+  list_names = c("ATV:TREM2","anti-TREM2", "MCSF", "TGFb", "LPS", "IFNg")
+  )
+
+dge.comparison.list <- list()
+
+for (i in 1:nrow(comparison.table)) {
+  info <- comparison.table[i,]
+  dge.result <- samples.img %>% 
+    filter(treatment_group == info$treatment_group) %>% 
+    flm_def(
+        covariate = "group",
+        numer = info$numerator,
+        denom = info$denominator,
+        batch = "batch") %>% 
+      fdge(method = "voom", features = genes.use)
+  dge.comparison.list[[info$list_names]] <- dge.result
+}
+```
+
+
+## GSEA
+
+We'll run GSEA using the MSigDB Hallmark genesets using the sparrow and
+FacileAnalysis packages.
+
+Let's load up the GeneSetDb and run a gsea analysis over the DGE results we
+generated above.
+
+```{r}
+gdb.h <- sparrow::getMSigGeneSetDb("H", "human")
+gsea <- lapply(dge.comparison.list, ffsea, gdb.h, "fgsea", rank_by = "t")
+```
+
+Let's get the gsea stats for each comparison, and we can rank by strongest hits
+within each. We'll use the NES score for this, even though it's not perfect.
+
+```{r}
+gstats <- lapply(names(gsea), function(g) {
+  gsea[[g]] %>% 
+    tidy() %>% 
+    arrange(desc(NES)) %>% 
+    filter(padj < 0.10) %>% 
+    transmute(
+      comp = g, name, n, NES, pval, padj, mean.logFC, mean.t, leadingEdge)
+}) %>% bind_rows()
+```
+
+## Heatmap generation
+
+We'll plot the topN genes per geneset that are in the leading edge from these
+analyses.
+
+We'll use the same genesets highlighted already in the figure.
+
+This table defines the Hallmark collection definitions to labels/use-cases
+in the paper. The order of the genesets in the `gs.map` tibble will dictate
+the order that they appear in the heatmap that we produce, too.
+
+```{r}
+gs.map <- tribble(
+  ~gsname,                               ~gslabel,              ~comparison,
+  "HALLMARK_G2M_CHECKPOINT",             "G2M\nCheckpoint",     "ATV:TREM2",
+  "HALLMARK_INTERFERON_GAMMA_RESPONSE",  "IFNg\nResponse",      "IFNg",
+  "HALLMARK_TGF_BETA_SIGNALING",         "TGFb\nSignaling",     "TGFb",
+  "HALLMARK_INTERFERON_ALPHA_RESPONSE",  "IFNa\nResponse",      NA,
+  "HALLMARK_TNFA_SIGNALING_VIA_NFKB",    "TNFa / NFKB",         "LPS")
+```
+
+And tally genes across the leading edge of these genesets.
+
+```{r}
+ledge.all <- gsea %>% 
+  FacileIncubator::leading_edge() %>% 
+  filter(name %in% gs.map$gsname)
+```
+
+Subset samples to the ones for show in the heatmap. The names of the trts vector
+are the labels we will use in the heatmap, and the values are the values in
+the `treatment` column.
+
+```{r}
+trts.keep <- c(
+  "ATV:ISO" = "ATV_RSV",
+  "ATV:TREM2" = "DNL919",
+  "PBS" = "Vehicle",  
+  "TGFb" = "TGFb",
+  "LPS" = "LPS", 
+  "IFNg" = "IFNg")
+
+samples.img.filter <- samples.img %>% 
+  filter(timepoint == "hrs_96", treatment %in% trts.keep) %>% 
+  mutate(
+    label = names(trts.keep)[match(treatment, trts.keep)],
+    label = factor(label, names(trts.keep))) %>% 
+  arrange(label)
+  
+setdiff(trts.keep, samples.img.filter$treatment) # 0, just checking
+table(samples.img.filter$label, useNA = "always")
+```
+
+
+Let's now define the genes to user per geneset
+
+```{r}
+top.n <- 15
+gdb.hm <- ledge.all %>% 
+  arrange(desc(ncomps)) %>% 
+  distinct(feature_id, .keep_all = TRUE) %>% 
+  arrange(name, desc(ncomps)) %>% 
+  group_by(name) %>% 
+  slice_head(n = top.n) %>% 
+  ungroup() %>% 
+  mutate(name = gs.map$gslabel[match(name, gs.map$gsname)], N = NULL) %>% 
+  sparrow::GeneSetDb(collection = "H")
+```
+
+```{r}
+hm <- FacileIncubator::fheatmap(
+  samples.img.filter,
+  gdb = gdb.hm,
+  zlim = c(-2, 2),
+  # name = "log2FC"
+  gs.order = gs.map$gslabel,
+  recenter = TRUE,
+  border = "darkgrey",
+  rename_rows = c("feature_id", "name"),
+  show_row_dend = FALSE,
+  
+  column_split = samples.img.filter$label,
+  cluster_columns = FALSE,
+  cluster_column_slices = FALSE,
+  show_column_names = FALSE)
+```
+
+Let's get leading edge of results on a case by case basis.
+
+```{r}
+# Number of genes to take / show for the heatmap *at most*
+# Genes are duplicated across collections, so the last step in this data
+# processing pipeline is to take each feature_id only once.
+top.n2 <- 25
+
+# Defines whicih comparison to get the leading edge out of
+ledge.res <- gs.map %>% 
+  filter(!is.na(comparison))
+
+ledge2 <- lapply(seq(nrow(ledge.res)), function(i) {
+  info <- ledge.res[i,]
+  # gs.name <- names(ledge.res)[i]
+  gs.name <- info$gsname
+  gs.label <- info$gslabel
+  gsea.name <- info$comparison
+  
+  gsea.res <- gsea[[gsea.name]]
+  comp.ledge <- FacileIncubator::leading_edge(gsea.res)
+  
+  dge.stats <- tidy(param(gsea.res, "x"))
+
+  iledge <-  comp.ledge %>% 
+    left_join(dge.stats, by = "feature_id", suffix = c("", ".dge")) %>% 
+    arrange(name, desc(t)) %>% 
+    filter(name == gs.name) %>% 
+    transmute(
+      collection, db.name = name, comp = gsea.name, 
+      feature_id, symbol, logFC, t, pval, padj) %>% 
+    mutate(name = gs.label) %>% 
+    slice_head(n = top.n2)
+}) %>%
+  bind_rows() %>% 
+  distinct(feature_id, .keep_all = TRUE)
+gdb.hm2 <- sparrow::GeneSetDb(ledge2)
+```
+
+```{r}
+hm2 <- FacileIncubator::fheatmap(
+  samples.img.filter,
+  gdb = gdb.hm2,
+  zlim = c(-2, 2),
+  name = "Z-score",
+  gs.order = gs.map$gslabel,
+  recenter = TRUE,
+  rescale = TRUE,
+  border = "darkgrey",
+  rename_rows = c("feature_id", "name"),
+  show_row_dend = FALSE,
+  row_names_gp = gpar(fontsize = 10),
+  column_split = samples.img.filter$label,
+  cluster_columns = FALSE,
+  cluster_column_slices = FALSE,
+  show_column_names = FALSE)
+```
+
+```{r}
+gss2 <- FacileIncubator::geneset_shifts(
+  gsea,
+  gs.map$gsname)
+gss2$plot
+```
+
+## Supplemental Files
+
+Provide hallmark geneset defintion, and annotated with genes used in the heatmap.
+
+```{r}
+sigs.df <- gdb.h %>% 
+  as.data.frame() %>% 
+  mutate(
+    in_fig3k = paste(name, feature_id) %in% paste(ledge2$db.name, ledge2$feature_id))
+
+write.csv(
+  sigs.df,
+  file.path(res.dir, "gene-signatures.csv"),
+  row.names = FALSE)
+```
+
+GSEA stats
+
+```{r}
+gsea.stats <- lapply(names(gsea), function(gname) {
+  gres <- gsea[[gname]]
+  tidy(gres, "fgsea") %>% 
+    transmute(
+      comparison = paste0(gname, " vs control"),
+      collection, name, ngenes = n, NES, ES, pval, 
+      fdr = padj.by.collection, mean.logFC, mean.t)
+}) %>% bind_rows()
+
+write.csv(gsea.stats, file.path(res.dir, "gsea-stats.csv"), row.names = FALSE)
+```
+
+
+
+

@@ -1,0 +1,162 @@
+---
+title: "Microglia analysis"
+author: "David Tatarakis"
+date: '`r format(Sys.Date(), "%B %d, %Y")`'
+output:
+  html_document:
+    code_folding: hide
+    toc: true
+    toc_float: true
+    toc_collapsed: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+libraries <- c("aws.s3", "Seurat", "Matrix", "ggplot2", "dplyr", "RColorBrewer")
+lapply(libraries, library, character.only=T)
+
+`%notin%` <- Negate(`%in%`)
+set.seed(1234)
+```
+
+# Dimensionality reduction
+```{r}
+# read in the integrated object from the prior vignette
+microglia <- readRDS("~/atvTrem2_combined_objects/NGS000072_microglia.Rds")
+```
+
+
+
+```{r}
+DefaultAssay(microglia) <- "RNA"
+
+diss_stress <- read.csv("~/atvTrem2_combined_scRNAseq/inst/extdata/diss_stress.csv")
+
+microglia <- microglia %>%
+  NormalizeData(.) %>%
+  FindVariableFeatures(.) %>%
+  ScaleData(.)
+
+# Run PCA on variable features without dissociation stress signature genes
+PCA_features <- rownames(microglia@assays$RNA@scale.data)[which(rownames(microglia@assays$RNA@scale.data) %notin% diss_stress$symbol)]
+
+microglia <- microglia %>% RunPCA(., features = PCA_features)
+
+microglia <- microglia %>%
+  RunUMAP(., dims = 1:8) %>%
+  FindNeighbors(., dims = 1:8) %>%
+  FindClusters(., resolution = 0.2)
+```
+
+```{r, fig.width=4.5, fig.height=3}
+DimPlot(microglia)
+```
+
+```{r,fig.width=8.75, fig.height=2.5}
+DimPlot(microglia, split.by = "batch")
+```
+
+
+We can see there is one small cluster (4) that represent low quality cells that got past our filtering. So now I'll remove those cells and repeat processing.
+```{r}
+VlnPlot(microglia, c("nCount_RNA", "nFeature_RNA"))
+```
+
+```{r}
+microglia <- subset(microglia, subset = seurat_clusters != 4)
+```
+
+
+We now have `r dim(microglia)[2]` microglia. That's probably far more than we need, and it wil lmake the analysis very computationally intensive. So Let's trim the object down. We'll take 6000 cells from each condition for a total of 30,000 cells.
+
+```{r}
+microglia[["group"]] <- paste0(microglia$treatment, "_", "day", microglia$treatment_duration)
+
+microglia$group <- plyr::mapvalues(microglia$group,
+                                   from = c("No treatment_dayN/A", "ATV:RSV_day1"),
+                                   to = c("Untreated", "ATV:RSV"))
+
+microglia$group <- factor(microglia$group, levels = c("Untreated",
+                                                      "ATV:RSV",
+                                                      "ATV:4D9_day1",
+                                                      "ATV:4D9_day7",
+                                                      "ATV:4D9_day14",
+                                                      "ATV:4D9_day28"))
+```
+
+```{r}
+microglia[["barcode"]] <- rownames(microglia@meta.data)
+cells_to_keep <- microglia@meta.data %>% group_by(group) %>% slice_sample(., n= 5000)
+cells_to_keep <- cells_to_keep$barcode
+
+microglia_subset <- subset(microglia, cells =cells_to_keep)
+```
+
+```{r}
+microglia_subset <- microglia_subset %>%
+  NormalizeData(.) %>%
+  FindVariableFeatures(.) %>%
+  ScaleData(.)
+
+# Run PCA on variable features without dissociation stress signature genes
+PCA_features <- rownames(microglia_subset@assays$RNA@scale.data)[which(rownames(microglia_subset@assays$RNA@scale.data) %notin% diss_stress$symbol)]
+
+microglia_subset <- microglia_subset %>% RunPCA(., features = PCA_features)
+
+microglia_subset <- microglia_subset %>%
+  RunUMAP(., dims = 1:8) %>%
+  FindNeighbors(., dims = 1:8) %>%
+  FindClusters(., resolution = 0.6)
+```
+
+```{r, fig.width=4.5, fig.height=3}
+DimPlot(microglia_subset, cols = c(rev(brewer.pal("Dark2", n = 8)), "dodgerblue3", "firebrick2", "gray90", "black"))
+```
+
+```{r,fig.width=8.75, fig.height=2.5}
+DimPlot(microglia_subset, split.by = "batch", cols = c(rev(brewer.pal("Dark2", n = 8)), "dodgerblue3", "firebrick2", "gray90", "black"))
+```
+
+```{r,fig.width=8.75, fig.height=4.5}
+DimPlot(microglia_subset, split.by = "group", ncol = 3, cols = c(rev(brewer.pal("Dark2", n = 8)), "dodgerblue3", "firebrick2", "gray90", "black"))
+```
+
+What genes define each of these clusters?
+```{r, eval = FALSE}
+markers <- FindAllMarkers(microglia_subset, only.pos = T, min.pct = 0.25)
+write.csv(markers, file = "~/atvTrem2_combined_scRNAseq/inst/extdata/NGS000072_microglia_cluster_markers.csv")
+```
+
+```{r}
+markers <- read.csv("~/atvTrem2_combined_scRNAseq/inst/extdata/NGS000072_microglia_cluster_markers.csv", header = T, row.names = 1)
+
+top5 <- markers %>% group_by(cluster) %>% slice_max(n = 5, order_by = avg_log2FC)
+```
+
+```{r, fig.width=8, fig.height=3}
+FeaturePlot(microglia_subset, c("Tmem119", "Cst7", "Pcna", "Mki67", "Cxcl10", "Ifitm3", "Isg15", "Apoe"), ncol = 4, order = T) & viridis::scale_color_viridis() & NoAxes()
+```
+
+```{r, eval = FALSE}
+microglia_subset <- RenameIdents(microglia_subset, 
+                                 `0` = ,
+                                 `1` = ,
+                                 `1` = ,
+                                 `3` = ,
+                                 `4` = ,
+                                 `5` = ,
+                                 `6` = ,
+                                 `7` = ,
+                                 `8` = ,
+                                 `9` = ,
+                                 `10` = ,
+                                 `11` = ,) 
+```
+
+#cols = c(brewer.pal("Set1", n = 9), "gray40", "gray60", "gray70")
+```{r, eval=FALSE}
+saveRDS(microglia_subset, "~/atvTrem2_combined_objects/NGS000072_microglia_subset.Rds")
+```

@@ -1,0 +1,328 @@
+---
+title: "Combined analysis"
+author: "David Tatarakis"
+date: '`r format(Sys.Date(), "%B %d, %Y")`'
+output:
+  html_document:
+    code_folding: hide
+    toc: true
+    toc_float: true
+    toc_collapsed: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, include = FALSE}
+Packages <- c("atvtrem2Combined", "dplyr", "Seurat", "aws.s3", "Matrix", "ggplot2", "pheatmap", "RColorBrewer", "SingleCellExperiment", "scuttle")
+lapply(Packages, library, character.only = TRUE)
+
+`%notin%` <- Negate(`%in%`)
+
+set.seed(1234)
+bucket1 <- "com.dnli.bioinfo.data/processed/internal/NGS000123/remapped"
+bucket2 <- "com.dnli.bioinfo.data/processed/internal/NGS000073"
+
+diss_stress <- read.csv("~/DNLI-21-236_ATV-Trem2_APPKI_timecourse/inst/extdata/diss_stress.csv", sep = ",", header = T)
+```
+
+```{r, include=FALSE}
+microglia_NGS73 <- aws.s3::s3readRDS(bucket = bucket2,
+                                     object = "NGS000072_microglia_subset.Rds",
+                                     region = "us-west-2")
+  
+microglia_NGS123 <- aws.s3::s3readRDS(bucket = bucket1,
+                                     object = "ATV-Trem2_APPKI_microglia_analyzed.Rds",
+                                     region = "us-west-2")
+```
+
+So let's take a look at both datasets.
+
+In study #1, we have now `r dim(microglia_NGS73)[2]` microglia.
+
+In study #2, we have `r dim(microglia_NGS123)[2]` microglia.
+
+
+```{r, echo=FALSE, fig.width=10, fig.height=4}
+DimPlot(microglia_NGS73, label=T) + DimPlot(microglia_NGS123, group.by = "seurat_clusters",label = T)
+```
+
+```{r, echo=FALSE, fig.width=12, fig.height=4}
+DimPlot(microglia_NGS73, group.by = "group", shuffle = T, raster = T, raster.dpi = c(1024,1024)) + DimPlot(microglia_NGS123, group.by = "group",label = F, shuffle = T, raster = T, raster.dpi = c(1024,1024)) & NoAxes()
+```
+
+```{r}
+table(microglia_NGS123$group, microglia_NGS123$sample)
+```
+
+```{r}
+table(microglia_NGS73$group, microglia_NGS73$sample_id)
+```
+
+For the purposes of his combined analysis, we'll drop the untreated mouse from study #1, since it is a single sample with no replicates. 
+```{r}
+microglia_NGS73 <- subset(microglia_NGS73, subset = sample_id != "NH36G")
+```
+
+Now we'll combine the two studies. We will reduce the size and equalize the effects of each replicate. We'll take 1400 cells at random from each mouse sample.
+```{r}
+microglia_NGS123$sample_id <- microglia_NGS123$sample
+microglia_NGS123$barcode <- rownames(microglia_NGS123@meta.data)
+microglia_NGS123$study <- "Study2"
+microglia_NGS73$study <- "Study1"
+
+
+
+cells_to_keep1 <- microglia_NGS73@meta.data %>% group_by(sample_id) %>% slice_sample(n = 1400)
+cells_to_keep2 <- microglia_NGS123@meta.data %>% group_by(sample_id) %>% slice_sample(n = 1400)
+
+microglia_NGS73 <- subset(microglia_NGS73, cells = cells_to_keep1$barcode)
+microglia_NGS123 <- subset(microglia_NGS123, cells = cells_to_keep2$barcode)
+
+```
+
+We will combine these studies using integration, to remove any study-specific effects.
+```{r}
+microglia_NGS73 <- NormalizeData(microglia_NGS73)
+microglia_NGS73 <- FindVariableFeatures(microglia_NGS73)
+
+microglia_NGS123 <- NormalizeData(microglia_NGS123)
+microglia_NGS123 <- FindVariableFeatures(microglia_NGS123)
+```
+
+```{r, eval = FALSE}
+anchors <- FindIntegrationAnchors(list(microglia_NGS73, microglia_NGS123), anchor.features = 2000)
+combined <- IntegrateData(anchors)
+```
+
+```{r}
+combined <- readRDS("~/atvTrem2_combined_objects/combined_object.Rds")
+```
+
+Now we have a final object consisting of `r dim(combined)[2]` microglia.
+
+```{r, eval=FALSE}
+DefaultAssay(combined) <- "RNA"
+
+combined <- combined %>% 
+  NormalizeData(.) %>%
+  FindVariableFeatures(.) %>%
+  ScaleData(.)
+  
+DefaultAssay(combined) <- "integrated"
+
+combined <- combined %>%
+  ScaleData(.)
+
+PCA_features <- rownames(combined@assays$RNA@scale.data)[which(rownames(combined@assays$RNA@scale.data) %notin% diss_stress$symbol)]
+  
+combined <- combined %>%  
+  RunPCA(., features = PCA_features) %>%
+  RunUMAP(., dims = 1:9) %>%
+  FindNeighbors(., dims = 1:9) %>%
+  FindClusters(., resolution = 0.3)
+
+combined$group <- paste0(combined$study, "_", combined$group)
+
+
+combined$group <- plyr::mapvalues(combined$group, 
+                                  from = unique(combined$group),
+                                  to = c("Study1_ATV4D9_day28",
+                                         "Study1_ATV4D9_day1",
+                                         "Study1_ATVRSV",
+                                         "Study1_ATV4D9_day7",
+                                         "Study1_ATV4D9_day14",
+                                         "Study2_WT_ATVDNP02",
+                                         "Study2_WT_ATV4D9",
+                                         "Study2_APPKI_ATVDNP02",
+                                         "Study2_APPKI_ATV4D9",
+                                         "Study2_APPKI_4D9"))
+
+combined$group <- factor(combined$group, levels = c("Study1_ATVRSV",
+                                                    "Study1_ATV4D9_day1",
+                                                    "Study1_ATV4D9_day7",
+                                                    "Study1_ATV4D9_day14",
+                                                    "Study1_ATV4D9_day28",
+                                                    "Study2_WT_ATVDNP02",
+                                                    "Study2_WT_ATV4D9",
+                                                    "Study2_APPKI_ATVDNP02",
+                                                    "Study2_APPKI_4D9",
+                                                    "Study2_APPKI_ATV4D9"))
+
+saveRDS(combined, "~/atvTrem2_combined_objects/combined_object.Rds")
+
+
+clustercols = brewer.pal("Dark2", n = 6)[c(1,3:6)]
+combined$clusters <- plyr::mapvalues(combined$seurat_clusters,
+                                     from = c(0,1,2,3,4,5),
+                                     to = c("Homeostatic",
+                                            "Homeostatic",
+                                            "cluster2",
+                                            "cluster3",
+                                            "cluster4",
+                                            "cluster5"))
+```
+
+```{r, fig.width=5, fig.height=3.25}
+DimPlot(combined, cols = brewer.pal("Dark2", n = 6))
+```
+
+```{r, fig.width=5, fig.height=3.25}
+DimPlot(combined, group.by = "clusters",cols = clustercols)
+```
+
+```{r, fig.width=10, fig.height=4}
+DimPlot(combined, split.by = "study", group.by = "clusters",cols = clustercols, raster = T, raster.dpi = c(1024,1024)) & NoAxes()
+```
+
+```{r, fig.width=10, fig.height=3.5}
+DimPlot(combined, split.by = "group", ncol = 5, group.by = "clusters",cols = clustercols) + NoAxes()
+```
+
+```{r, include=FALSE}
+totals <- as.data.frame((table(combined$clusters, combined$sample_id))) %>%
+  group_by(Var2) %>%
+  mutate(percent = Freq/sum(Freq) *100)
+
+colnames(totals) <- c("cluster", "sample_id", "Count", "Percent")
+
+meta_slim <- combined@meta.data %>% select(c(group, sample_id, study)) %>% distinct(.)
+
+totals <- totals %>%
+  left_join(meta_slim, by = "sample_id")
+
+totals$cluster <- factor(totals$cluster, levels = rev(levels(totals$cluster)))
+```
+
+```{r, fig.width=12, fig.height=4}
+ggplot(totals, aes(x = sample_id, y = Percent, fill = cluster)) +
+  geom_bar(stat = "summary") +
+  theme_bw() +
+  scale_fill_manual(values = rev(brewer.pal("Dark2", n = 6)[c(1,3:6)])) +
+  coord_flip() +
+  facet_wrap(~group, scales= "free_y", ncol = 5)
+```
+
+```{r}
+totals$group <- factor(totals$group, levels = rev(levels(totals$group)))
+
+```
+
+
+```{r}
+ggplot(totals, aes(x = group, y = Percent, fill = cluster)) +
+  geom_bar(stat = "summary") +
+  theme_bw() +
+  scale_fill_manual(values = rev(clustercols)) +
+  coord_flip() + scale_y_continuous(expand = expansion())
+```
+
+```{r, fig.width=6, fig.height=2}
+ggplot(totals, aes(x = group, y = Percent, fill = cluster)) +
+  geom_bar(stat = "summary") +
+  theme_bw() +
+  scale_fill_manual(values = rev(clustercols)) +
+  coord_flip() + 
+  facet_wrap(~study, scales = "free_y", ncol = 1)
+```
+
+
+```{r, fig.width=10, fig.height=3.5}
+DefaultAssay(combined) <- "RNA"
+FeaturePlot(combined, c("Tmem119", "Cst7", "Apoe","Lpl", "Pcna", "Mki67", "Cxcl10", "Aldoa"), ncol = 4, order = F) & viridis::scale_color_viridis() & NoAxes()
+```
+
+
+```{r}
+signatures <- read.csv("~/DNLI-21-236_ATV-Trem2_APPKI_timecourse/inst/extdata/state_signatures.csv", sep = ",", header = T)
+
+chen_sigs <- signatures %>% filter(collection == "ChenColonna2021")
+chen_sigs <- split(chen_sigs$symbol, chen_sigs$name)
+names(chen_sigs) <- gsub("-", ".", names(chen_sigs))
+
+topics <- signatures %>% filter(collection == "topics")
+topics <- split(topics$symbol, topics$name)
+```
+
+```{r}
+for (i in 1:length(chen_sigs)) {
+  combined <- AddModuleScore(combined, 
+                             features = list(chen_sigs[[i]]), 
+                             name = paste0("ChenColonna_", names(chen_sigs)[i]))
+}
+```
+
+```{r, fig.width=10, fig.height=1.5}
+FeaturePlot(combined, paste0("ChenColonna_", names(chen_sigs), "1"), ncol = 5, order = F, min.cutoff = 0) & viridis::scale_color_viridis() & NoAxes()
+```
+
+
+```{r}
+sample_annotation <-  combined@meta.data %>% select(c(group, sample_id)) %>% distinct(.)
+
+sample_annotation <- sample_annotation %>% group_by(group) %>% dplyr::arrange(.by_group = T) %>% as.data.frame()
+rownames(sample_annotation) <- sample_annotation$sample_id
+
+sample_annotation_slim <- sample_annotation %>% dplyr::select(group)
+rownames(sample_annotation_slim) <- sample_annotation$sample_id
+```
+
+```{r}
+chen_annotation <- signatures %>% dplyr::filter(collection == "ChenColonna2021")
+rownames(chen_annotation) <- chen_annotation$symbol
+chen_annotation <- dplyr::select(chen_annotation, name)
+
+chen_annotation_colors <- list(name=c(`Homeostatic`="lightblue3", 
+                                      `DAM-like`="coral2", 
+                                      `IFN`="darkgreen", 
+                                      `MHC`="grey20",
+                                      `Cyc-M` = "lemonchiffon3"),
+                               group = c(`Study1_ATVRSV` = "#8DD3C7",
+                                          `Study1_ATV4D9_day1` = "#FFFFB3",
+                                          `Study1_ATV4D9_day7` = "#BEBADA",
+                                          `Study1_ATV4D9_day14` = "#FB8072",
+                                          `Study1_ATV4D9_day28` = "#80B1D3",
+                                          `Study2_WT_ATVDNP02` = "#FDB462",
+                                          `Study2_WT_ATV4D9` = "#B3DE69",
+                                          `Study2_APPKI_ATVDNP02` = "#FCCDE5",
+                                          `Study2_APPKI_4D9` = "#D9D9D9",
+                                          `Study2_APPKI_ATV4D9` = "#BC80BD"))
+```
+
+```{r}
+chen_averages <- AverageExpression(combined, features = rownames(chen_annotation), group.by = "sample_id")
+
+chen_cluster_averages <- AverageExpression(combined, features = rownames(chen_annotation), group.by = "seurat_clusters")
+```
+
+```{r, echo=FALSE, fig.width=6.5, fig.height=8}
+pheatmap::pheatmap(mat = chen_averages$RNA[,rownames(sample_annotation_slim)], 
+                   scale = "row",
+                   annotation_row = chen_annotation,
+                   annotation_col = data.frame(sample_annotation_slim),
+                   annotation_colors = chen_annotation_colors,
+                   cluster_cols = F, 
+                   cluster_rows = F, 
+                   show_rownames = T,
+                   show_colnames = F,
+                   gaps_col = c(3, 6, 9, 12, 15, 19, 23, 27, 31),
+                   gaps_row = c(15, 40, 49, 55),
+                   main = "Chen/Colonna Review Signature Genes",
+                   color = rev(colorRampPalette(RColorBrewer::brewer.pal(11, "RdBu"))(256)))
+```
+
+
+```{r, echo=FALSE, fig.width=4, fig.height=8}
+pheatmap::pheatmap(mat = chen_cluster_averages$RNA, 
+                   scale = "row",
+                   annotation_row = chen_annotation,
+                   annotation_colors = chen_annotation_colors[1],
+                   cluster_cols = F, 
+                   cluster_rows = F, 
+                   show_rownames = T,
+                   show_colnames = T,
+                   gaps_row = c(15, 40, 49, 55),
+                   main = "Chen/Colonna Review Signature Genes",
+                   color = rev(colorRampPalette(RColorBrewer::brewer.pal(11, "RdBu"))(256)))
+```
