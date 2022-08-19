@@ -15,7 +15,7 @@ knitr::opts_chunk$set(echo = TRUE)
 ```
 
 ```{r, include = FALSE}
-Packages <- c("atvtrem2Combined", "dplyr", "Seurat", "aws.s3", "Matrix")
+Packages <- c("dplyr", "Seurat", "aws.s3", "Matrix")
 lapply(Packages, library, character.only = TRUE)
 
 mito.cutoff <- 7.5
@@ -28,11 +28,7 @@ CMOs <- c("CMO301", "CMO302", "CMO303", "CMO304", "CMO305", "CMO306", "CMO307", 
 
 ## Read in all 20 of the sample data sets
 ```{r}
-metadata <- s3read_using(FUN = read.csv, 
-                         bucket = "com.dnli.bioinfo.data/processed/internal/NGS000123",
-                         object = "sample_metadata.csv",
-                         opts = list(region = "us-west-2"))
-
+metadata <- read.csv("/inst/extdata/Study2_sample_metadata.csv")
 
 Pool1_samples <- c("TW01", "TW02", "TW03", "TW04", "TW05")
 
@@ -53,10 +49,9 @@ pool4 <- list()
 # Read in Pool 1 data sets
 for (i in 1:length(Pool1_samples)){
 
-  object <- s3.read10X(bucket = paste0("com-dnli-ngs/10x-data/NGS000123/novaseq_remap/pool1/outs/per_sample_outs/", 
+  object <- Seurat::Read10X(paste0("/pool1/outs/per_sample_outs/", 
                                    Pool1_samples[i], 
                                    "/count/sample_filtered_feature_bc_matrix"), 
-                   region = "us-east-1", 
                    min.cells = 3, 
                    min.features = 50, 
                    project = paste0("ATV:Trem2_APPKI_", Pool1_samples[i]))
@@ -83,8 +78,8 @@ for (i in 1:length(Pool1_samples)){
 # Read in Pool 2 data sets
 for (i in 1:length(Pool2_samples)){
 
-  object <- s3.read10X(bucket = paste0("com-dnli-ngs/10x-data/NGS000123/novaseq_remap/pool2/outs/per_sample_outs/", 
-                                   Pool2_samples[i], 
+  object <- Seurat::Read10X(paste0("/pool2/outs/per_sample_outs/", 
+                                   Pool1_samples[i], 
                                    "/count/sample_filtered_feature_bc_matrix"), 
                    region = "us-east-1", 
                    min.cells = 3, 
@@ -113,8 +108,8 @@ for (i in 1:length(Pool2_samples)){
 # Read in Pool 3 data sets
 for (i in 1:length(Pool3_samples)){
 
-  object <- s3.read10X(bucket = paste0("com-dnli-ngs/10x-data/NGS000123/novaseq_remap/pool3/outs/per_sample_outs/", 
-                                   Pool3_samples[i], 
+  object <- Seurat::Read10X(paste0("/pool1/outs/per_sample_outs/", 
+                                   Pool1_samples[i], 
                                    "/count/sample_filtered_feature_bc_matrix"), 
                    region = "us-east-1", 
                    min.cells = 3, 
@@ -143,7 +138,7 @@ for (i in 1:length(Pool3_samples)){
 # Read in Pool 4 data sets
 for (i in 1:length(Pool4_samples)){
 
-  object <- s3.read10X(bucket = paste0("com-dnli-ngs/10x-data/NGS000123/novaseq_remap/pool4/outs/per_sample_outs/", 
+  object <- Seurat::Read10X(paste0("/pool1/outs/per_sample_outs/", 
                                    Pool4_samples[i], 
                                    "/count/sample_filtered_feature_bc_matrix"), 
                    region = "us-east-1", 
@@ -218,10 +213,10 @@ VlnPlot(pool4_seurat, features = c("nFeature_RNA", "nCount_RNA", "percent.mito")
 ```
 
 ```{r, eval=FALSE}
-saveRDS(pool1_seurat, "~/NGS000123_objects/pool1_seurat.Rds")
-saveRDS(pool2_seurat, "~/NGS000123_objects/pool2_seurat.Rds")
-saveRDS(pool3_seurat, "~/NGS000123_objects/pool3_seurat.Rds")
-saveRDS(pool4_seurat, "~/NGS000123_objects/pool4_seurat.Rds")
+saveRDS(pool1_seurat, "~/pool1_seurat.Rds")
+saveRDS(pool2_seurat, "~/pool2_seurat.Rds")
+saveRDS(pool3_seurat, "~/pool3_seurat.Rds")
+saveRDS(pool4_seurat, "~/pool4_seurat.Rds")
 ```
 
 # Integrate the pools together (batch correction)
