@@ -11,14 +11,29 @@ output:
 ---
 
 ```{r, include = FALSE}
-Packages <- c("atvtrem2Combined", "dplyr", "Seurat", "aws.s3", "Matrix", "ggplot2", "pheatmap", "RColorBrewer", "scuttle", "SingleCellExperiment", "limma", "msigdbr", "fgsea", "sparrow", "edgeR")
+Packages <-
+  c(
+    "atvtrem2Combined",
+    "dplyr",
+    "Seurat",
+    "aws.s3",
+    "Matrix",
+    "ggplot2",
+    "pheatmap",
+    "RColorBrewer",
+    "scuttle",
+    "SingleCellExperiment",
+    "limma",
+    "msigdbr",
+    "fgsea",
+    "sparrow",
+    "edgeR"
+  )
 lapply(Packages, library, character.only = TRUE)
 
 `%notin%` <- Negate(`%in%`)
 
 set.seed(1234)
-bucket1 <- "com.dnli.bioinfo.data/processed/internal/NGS000123/remapped"
-bucket2 <- "com.dnli.bioinfo.data/processed/internal/NGS000073"
 
 gg_color_hue <- function(n) {
   hues = seq(15, 375, length = n + 1)
@@ -28,67 +43,74 @@ gg_color_hue <- function(n) {
 
 
 
-We're going to look at how DAM-like microglia are induced by both ATV:Trem2 treatments and real AD-like pathology (Abeta plaques). We'll take both the NGS000123 data set (APP KI mice treated with ATV:Trem2) and the NGS000073 data set (the original ATV-Trem2 treated mouse scRNA-seq. All WT). 
+We're going to look at how DAM-like microglia are induced by both ATV:Trem2 
+treatments and real AD-like pathology (Abeta plaques). We'll take both: 
 
-We'll do some expression comparisons at the pseudobulk level and also combine everything together to see how the populations cluster.
+- Study 2 data set (APP KI mice treated with ATV:Trem2) and the 
+- Study 1 data set (the original ATV-Trem2 treated mouse scRNA-seq. All WT). 
 
-The main goal of this analysis is to answer the question: **How similar are ATV:Trem2-activated microglia to patholgy-activated microglia?**
+
+We'll do some expression comparisons at the pseudobulk level 
+and also combine everything together to see how the populations cluster.
+
+The main goal of this analysis is to answer the question: 
+**How similar are ATV:Trem2-activated microglia to patholgy-activated microglia?**
 
 ```{r, include=FALSE}
-microglia_NGS73 <- aws.s3::s3readRDS(bucket = bucket2,
-                                     object = "NGS000073_final_seurat_object.RDS",
+microglia_Study1 <- s3readRDS(bucket = bucket2,
+                                     object = "Study1_final_seurat_object.RDS",
                                      region = "us-west-2")
 
-microglia_NGS123 <- aws.s3::s3readRDS(bucket = bucket1,
-                                     object = "ATV-Trem2_APPKI_microglia_analyzed.Rds",
-                                     region = "us-west-2")
+microglia_Study2 <- s3readRDS(bucket = bucket1,
+                                      object = "ATV-Trem2_APPKI_microglia_analyzed.Rds",
+                                      region = "us-west-2")
 ```
 
 ```{r, include=FALSE}
 
 ## going to make some name changes to comply with limma naming conventions
-microglia_NGS123$group <- plyr::mapvalues(microglia_NGS123$group, from = c('WT_ATV-DNP02',      
+microglia_Study2$group <- plyr::mapvalues(microglia_Study2$group, from = c('WT_ATV-DNP02',      
                                                                          'WT_ATV-4D9',        
                                                                          'APP-SAA_ATV-DNP02', 
                                                                          'APP-SAA_ATV-4D9',   
                                                                          'APP-SAA 4D9'),
-                                                                  to = c("NGS123_WT_ATV_DNP02",
-                                                                         "NGS123_WT_ATV_4D9",
-                                                                         "NGS123_APP_SAA_ATV_DNP02",
-                                                                         "NGS123_APP_SAA_ATV_4D9",
-                                                                         "NGS123_APP_SAA_4D9"))
+                                                                  to = c("Study2_WT_ATV_DNP02",
+                                                                         "Study2_WT_ATV_4D9",
+                                                                         "Study2_APP_SAA_ATV_DNP02",
+                                                                         "Study2_APP_SAA_ATV_4D9",
+                                                                         "Study2_APP_SAA_4D9"))
 
-microglia_NGS123$group <- factor(microglia_NGS123$group, levels = c("NGS123_WT_ATV_DNP02",
-                                                                    "NGS123_WT_ATV_4D9",
-                                                                    "NGS123_APP_SAA_ATV_DNP02",
-                                                                    "NGS123_APP_SAA_4D9",
-                                                                    "NGS123_APP_SAA_ATV_4D9"))
+microglia_Study2$group <- factor(microglia_Study2$group, levels = c("Study2_WT_ATV_DNP02",
+                                                                    "Study2_WT_ATV_4D9",
+                                                                    "Study2_APP_SAA_ATV_DNP02",
+                                                                    "Study2_APP_SAA_4D9",
+                                                                    "Study2_APP_SAA_ATV_4D9"))
 
 
-microglia_NGS123$mouse <- paste0(microglia_NGS123$group, "_",microglia_NGS123$sample)
+microglia_Study2$mouse <- paste0(microglia_Study2$group, "_",microglia_Study2$sample)
 ```
 
 ```{r}
-## Now I'll do the same for NGS000073
+## Now I'll do the same for Study1
 
-microglia_NGS73$group <- plyr::mapvalues(microglia_NGS73$group, from = c("ATV:RSV",
+microglia_Study1$group <- plyr::mapvalues(microglia_Study1$group, from = c("ATV:RSV",
                                                                          "days_01",
                                                                          "days_07",
                                                                          "days_14",
                                                                          "days_28"),
-                                                                to = c("NGS73_WT_ATV_RSV",
-                                                                       "NGS73_WT_ATV_4D9_day1",
-                                                                       "NGS73_WT_ATV_4D9_day7",
-                                                                       "NGS73_WT_ATV_4D9_day14",
-                                                                       "NGS73_WT_ATV_4D9_day28"))
+                                                                to = c("Study1_WT_ATV_RSV",
+                                                                       "Study1_WT_ATV_4D9_day1",
+                                                                       "Study1_WT_ATV_4D9_day7",
+                                                                       "Study1_WT_ATV_4D9_day14",
+                                                                       "Study1_WT_ATV_4D9_day28"))
 
-microglia_NGS73$mouse <- paste0(microglia_NGS73$group, "_",microglia_NGS73$sample_id)
+microglia_Study1$mouse <- paste0(microglia_Study1$group, "_",microglia_Study1$sample_id)
 
 ```
 
 ```{r}
 # renaming clusters to match the manuscript names
-microglia_NGS73$named_clusters <- plyr::mapvalues(Idents(microglia_NGS73), 
+microglia_Study1$named_clusters <- plyr::mapvalues(Idents(microglia_Study1), 
                                                   from = c("0", "3", "11", "6", "9", "10", "16", "7", "1", "5", "13", "4", "8", "2"),
                                                   to = c("Homeo1",
                                                          "Hm0",
@@ -107,7 +129,7 @@ microglia_NGS73$named_clusters <- plyr::mapvalues(Idents(microglia_NGS73),
 
 
 # define colors for the NGS00073 dataset
-clusters <- unique(microglia_NGS73$named_clusters)
+clusters <- unique(microglia_Study1$named_clusters)
 cols.universe <- dittoSeq::dittoColors()
 
 colors.explicit <- c(
@@ -132,15 +154,15 @@ out <- out[!is.na(names(out))]
 As a reminder, here are the clusters found in each experiment:
 
 ```{r}
-p1 <- DimPlot(microglia_NGS73, group.by = "named_clusters", cols = out) + NoAxes() + ggtitle("Figure1 UMAP")
+p1 <- DimPlot(microglia_Study1, group.by = "named_clusters", cols = out) + NoAxes() + ggtitle("Figure1 UMAP")
 ```
 
 ```{r, fig.width=18, fig.height=4}
-DimPlot(microglia_NGS73, group.by = "named_clusters", cols = out, split.by = "group") + NoAxes() + ggtitle("Figure1 UMAP")
+DimPlot(microglia_Study1, group.by = "named_clusters", cols = out, split.by = "group") + NoAxes() + ggtitle("Figure1 UMAP")
 ```
 
 ```{r}
-p2 <- DimPlot(microglia_NGS123, 
+p2 <- DimPlot(microglia_Study2, 
         group.by = "seurat_clusters") +
   NoAxes() + 
   ggtitle("Figure?? UMAP")
@@ -153,7 +175,7 @@ p1 + p2
 But we need to define some cluster names for the new data set.
 
 ```{r}
-microglia_NGS123$named_clusters <- plyr::mapvalues(microglia_NGS123$seurat_clusters,
+microglia_Study2$named_clusters <- plyr::mapvalues(microglia_Study2$seurat_clusters,
                                                    from = c(0,1,2,3,4,5,6,7,8),
                                                    to = c("Homeostatic1",
                                                           "AbActivated1",
@@ -166,7 +188,7 @@ microglia_NGS123$named_clusters <- plyr::mapvalues(microglia_NGS123$seurat_clust
                                                           "TgActivated3"))
 
 
-microglia_NGS123$named_clusters <- factor(microglia_NGS123$named_clusters,
+microglia_Study2$named_clusters <- factor(microglia_Study2$named_clusters,
                                           levels = c("Homeostatic1",
                                                       "Homeostatic2",
                                                       "AbActivated1",
@@ -178,11 +200,11 @@ microglia_NGS123$named_clusters <- factor(microglia_NGS123$named_clusters,
                                                       "AbTgActivated"))
 
 cols_123 <- c(out[c(7, 8, 1, 2, 6)], "mediumpurple3", "coral2", "gray60", out[5])
-names(cols_123) <- levels(microglia_NGS123$named_clusters)
+names(cols_123) <- levels(microglia_Study2$named_clusters)
 ```
 
 ```{r}
-p2n <- DimPlot(microglia_NGS123, 
+p2n <- DimPlot(microglia_Study2, 
         group.by = "named_clusters", 
         cols = cols_123) + 
   NoAxes() + 
@@ -194,13 +216,13 @@ p1 + p2n
 ```
 
 ```{r, include=FALSE}
-totals_73 <- as.data.frame((table(microglia_NGS73$named_clusters, microglia_NGS73$sample_id))) %>%
+totals_73 <- as.data.frame((table(microglia_Study1$named_clusters, microglia_Study1$sample_id))) %>%
   group_by(Var2) %>%
   mutate(percent = Freq/sum(Freq) *100)
 
 colnames(totals_73) <- c("State", "sample_id", "Count", "Percent")
 
-meta_slim <- microglia_NGS73@meta.data %>% select(c(group, treatment, sample_id)) %>% distinct(.)
+meta_slim <- microglia_Study1@meta.data %>% select(c(group, treatment, sample_id)) %>% distinct(.)
 
 totals_73 <- totals_73 %>%
   left_join(meta_slim, by = "sample_id")
@@ -228,13 +250,13 @@ ggplot(totals_73, aes(x = group, y = Percent, fill = State)) +
 
 
 ```{r, include=FALSE}
-totals_123 <- as.data.frame((table(microglia_NGS123$named_clusters, microglia_NGS123$sample))) %>%
+totals_123 <- as.data.frame((table(microglia_Study2$named_clusters, microglia_Study2$sample))) %>%
   group_by(Var2) %>%
   mutate(percent = Freq/sum(Freq) *100)
 
 colnames(totals_123) <- c("State", "sample", "Count", "Percent")
 
-meta_slim <- microglia_NGS123@meta.data %>% select(c(genotype, group, treatment, sample)) %>% distinct(.)
+meta_slim <- microglia_Study2@meta.data %>% select(c(genotype, group, treatment, sample)) %>% distinct(.)
 
 totals_123 <- totals_123 %>%
   left_join(meta_slim, by = "sample")
@@ -267,7 +289,7 @@ Ok now we've thoroughly explored how these clusters are distributed across condi
 We're going to group together the Ab-activated clusters and the Tg-activated clusters for simplicity. Then we'll do pseudobulk DE analysis to get a big picture view of what genes are most representative of the differences between pathology-induced DAMs and ATV::Trem2-induced "DAMs".
 
 ```{r}
-microglia_NGS123$broad_clusters <- plyr::mapvalues(microglia_NGS123$named_clusters, 
+microglia_Study2$broad_clusters <- plyr::mapvalues(microglia_Study2$named_clusters, 
                                                    from = c("Homeostatic1",
                                                       "Homeostatic2",
                                                       "AbActivated1",
@@ -290,13 +312,13 @@ microglia_NGS123$broad_clusters <- plyr::mapvalues(microglia_NGS123$named_cluste
 ```
 
 ```{r}
-DimPlot(microglia_NGS123, group.by = "broad_clusters")
+DimPlot(microglia_Study2, group.by = "broad_clusters")
 ```
 
 ```{r}
-sce <- as.SingleCellExperiment(microglia_NGS123)
+sce <- as.SingleCellExperiment(microglia_Study2)
 
-meta <- transform(microglia_NGS123@meta.data)
+meta <- transform(microglia_Study2@meta.data)
 ## Pick the meta data we want to aggregate by
 agg.df <- DataFrame(
     sample = meta$sample,
