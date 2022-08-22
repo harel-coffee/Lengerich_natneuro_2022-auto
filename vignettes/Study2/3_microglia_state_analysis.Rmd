@@ -154,7 +154,6 @@ FeaturePlot(
   "Fos",
   order = T,
   split.by = "group",
-  ncol = 3,
   min.cutoff = 2
 )
 ```
@@ -166,12 +165,12 @@ but not entirely.
 
 ```{r, include=FALSE}
 totals <-
-  as.data.frame((
+  as.data.frame(
     table(
       microglia_integrated$seurat_clusters,
       microglia_integrated$sample
     )
-  )) %>%
+  ) %>%
   group_by(Var2) %>%
   mutate(percent = Freq / sum(Freq) * 100)
 

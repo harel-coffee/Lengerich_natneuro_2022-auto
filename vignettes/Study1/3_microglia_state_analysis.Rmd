@@ -56,6 +56,7 @@ PCA_features <-
       )
     ]
 
+
 microglia <- microglia %>% RunPCA(., features = PCA_features)
 
 microglia <- microglia %>%
@@ -91,8 +92,12 @@ microglia[["group"]] <-
 
 microglia$group <- plyr::mapvalues(
   microglia$group,
-  from = c("No treatment_dayN/A", "ATV:RSV_day1"),
-  to = c("Untreated", "ATV:RSV")
+  from = c(
+    "No treatment_dayN/A", 
+    "ATV:RSV_day1"),
+  to = c(
+    "Untreated", 
+    "ATV:RSV")
 )
 
 microglia$group <- factor(
