@@ -16,7 +16,7 @@ knitr::opts_chunk$set(echo = TRUE)
 
 ```{r}
 libraries <- c("aws.s3", "Seurat", "Matrix", "ggplot2", "dplyr")
-lapply(libraries, library, character.only=T)
+lapply(libraries, library, character.only = T)
 ```
 
 # Dimensionality reduction
@@ -35,7 +35,7 @@ ElbowPlot(object)
 dims <- 12
 
 # Now we can run the dimentionality reductions
-object <- object %>% 
+object <- object %>%
   RunUMAP(., dims = 1:dims) %>%
   FindNeighbors(., dims = 1:dims) %>%
   FindClusters(., resolution = 0.1)
@@ -53,12 +53,11 @@ DefaultAssay(object) <- "RNA"
 # We need to normalize, find variable features, etc using this assay, now.
 object <- object %>%
   NormalizeData(.)
-
 ```
 
 ```{r, eval = FALSE}
 future::plan("multiprocess", workers = 4)
-options(future.globals.maxSize = 12000 * 1024^2)
+options(future.globals.maxSize = 12000 * 1024 ^ 2)
 
 markers <- FindAllMarkers(object)
 
@@ -68,19 +67,31 @@ write.csv(markers, "/inst/extdata/Study1_cluster_markers.csv")
 ```
 
 ```{r}
-markers <- read.csv("/inst/extdata/Study1_cluster_markers.csv", row.names = 1, header = T)
+markers <-
+  read.csv(
+    "/inst/extdata/Study1_cluster_markers.csv",
+    row.names = 1,
+    header = T
+  )
 
-top10 <- markers %>% group_by(cluster) %>% slice_max(n = 10, order_by = avg_log2FC)
+top10 <-
+  markers %>% group_by(cluster) %>% slice_max(n = 10, order_by = avg_log2FC)
 ```
 
 ```{r, fig.width=6, fig.height=3}
-FeaturePlot(object, c("P2ry12", "Slc1a2", "F13a1", "Cldn5", "S100a11", "Atp1a2"), ncol = 3)
+FeaturePlot(object,
+            c("P2ry12", 
+              "Slc1a2", 
+              "F13a1", 
+              "Cldn5", 
+              "S100a11", 
+              "Atp1a2"),
+            ncol = 3)
 ```
 
 Time to remove the apparent non-microglia populations.
 ```{r, eval=FALSE}
-microglia <- subset(object, subset = seurat_clusters %in% c(0,1,2))
-
+microglia <- subset(object, subset = seurat_clusters %in% c(0, 1, 2))
 saveRDS(microglia, file = "~/Study1_microglia.Rds")
 ```
 
