@@ -17,16 +17,23 @@ knitr::opts_chunk$set(echo = TRUE)
 
 
 ```{r, include = FALSE}
-libraries <- c("aws.s3", "Seurat", "Matrix", "ggplot2", "dplyr", "atvtrem2Combined")
-lapply(libraries, library, character.only=T)
-  
+libraries <-
+  c("aws.s3",
+    "Seurat",
+    "Matrix",
+    "ggplot2",
+    "dplyr")
+lapply(libraries, library, character.only = T)
+
 
 meta <- read.csv("/inst/extdata/Study1_sample_metadata.csv")
 
 meta$sample_id <- meta$parent_id
-meta$sample_id <- plyr::mapvalues(meta$sample_id, 
-                                  from = c("NH1G", "NH2G", "NH3G", "NH4G", "NH5G"),
-                                  to = c("NH01G", "NH02G", "NH03G", "NH04G", "NH05G"))
+meta$sample_id <- plyr::mapvalues(
+  meta$sample_id,
+  from = c("NH1G", "NH2G", "NH3G", "NH4G", "NH5G"),
+  to = c("NH01G", "NH02G", "NH03G", "NH04G", "NH05G")
+)
 ```
 
 Now we can read in the data. This tutorial assumes we are working with 10x data. But it's easy enough to adapt this to other library types.
@@ -37,59 +44,89 @@ Now we can read in the data. This tutorial assumes we are working with 10x data.
 samples <- c(meta$sample_id)
 
 # Read in counts matrix from each pool of libraries and build a Seurat object
-
-# We'll use the function I wrote called s3.read10X, which re-implements the read10x function from Seurat, but works from an S3 bucket.
 # we'll also add the sample-level data to each object.
 
 
 
-objects <- lapply(samples, FUN = function(x){
-  object <- Seurat::Read10X(paste0("Study1/cellranger_7.0.0/",
-                                       x, 
-                                       "/outs/filtered_feature_bc_matrix"),
-                       project = "atv_trem2_timecourse") # replace with your own experiment name
-  object[["sample_id"]] <- x #adding sample ID
-  sample_meta <- meta %>% dplyr::filter(sample_id == x) #subsetting the meta data
-  object@meta.data <- object@meta.data %>% dplyr::left_join(meta, by = "sample_id") #adding sample-level metadata
-  rownames(object@meta.data) <- colnames(object) #resetting rownames, because they get dropped
-  object
-})
+objects <- lapply(
+  samples,
+  FUN = function(x) {
+    object <- Seurat::Read10X(
+      paste0(
+        "Study1/cellranger_7.0.0/",
+        x,
+        "/outs/filtered_feature_bc_matrix"
+      ),
+      project = "atv_trem2_timecourse"
+    ) 
+    
+    object[["sample_id"]] <- x #adding sample ID
+    
+    sample_meta <-
+      meta %>% 
+      dplyr::filter(sample_id == x) #subsetting the meta data
+    
+    object@meta.data <-
+      object@meta.data %>% 
+      dplyr::left_join(meta, by = "sample_id") #adding sample-level metadata
+    
+    rownames(object@meta.data) <-
+      colnames(object) #resetting rownames, because they get dropped
+    
+    object
+  }
+)
 
 ```
 
 ```{r}
-# Now we'll combine objects each object according to their batch ID. Just combine all objects from each batch.
+# Now we'll combine objects each object according to their batch ID. 
+# Just combine all objects from each batch.
 
 batch4_merged <- merge(objects[[1]], c(objects[[2]],
-                                     objects[[3]],
-                                     objects[[4]],
-                                     objects[[5]],
-                                     objects[[6]]))
+                                       objects[[3]],
+                                       objects[[4]],
+                                       objects[[5]],
+                                       objects[[6]]))
 
 batch3_merged <- merge(objects[[7]], c(objects[[8]],
-                                     objects[[9]],
-                                     objects[[10]],
-                                     objects[[11]]))
+                                       objects[[9]],
+                                       objects[[10]],
+                                       objects[[11]]))
 
 batch1_merged <- merge(objects[[12]], c(objects[[13]],
-                                     objects[[14]],
-                                     objects[[15]],
-                                     objects[[16]]))
+                                        objects[[14]],
+                                        objects[[15]],
+                                        objects[[16]]))
 rm(objects)
 ```
 
 ## Basic QC metrics
 ```{r}
-# Let's add a slot to the meta data with information about the percentage of mitochondrial counts detected. Low quality cells often have high %mitochondrial reads. This is especially true in single-nucleus data!
-batch4_merged[["percent.mito"]] <- Seurat::PercentageFeatureSet(batch4_merged, pattern = "^mt-")
-batch3_merged[["percent.mito"]] <- Seurat::PercentageFeatureSet(batch3_merged, pattern = "^mt-")
-batch1_merged[["percent.mito"]] <- Seurat::PercentageFeatureSet(batch1_merged, pattern = "^mt-")
+# Let's add a slot to the meta data with information about the percentage of 
+# mitochondrial counts detected. 
 
-# We can observe the distribution of counts, detected features, and percentage mitochondrial counts across all cells in each object. While we're using the filtered matrix from Cell Ranger, sometimes low quality cells slip through. 
+batch4_merged[["percent.mito"]] <-
+  Seurat::PercentageFeatureSet(batch4_merged, pattern = "^mt-")
+batch3_merged[["percent.mito"]] <-
+  Seurat::PercentageFeatureSet(batch3_merged, pattern = "^mt-")
+batch1_merged[["percent.mito"]] <-
+  Seurat::PercentageFeatureSet(batch1_merged, pattern = "^mt-")
 
-VlnPlot(batch4_merged, c("nFeature_RNA", "nCount_RNA", "percent.mito"), pt.size = 0)
-VlnPlot(batch3_merged, c("nFeature_RNA", "nCount_RNA", "percent.mito"), pt.size = 0)
-VlnPlot(batch1_merged, c("nFeature_RNA", "nCount_RNA", "percent.mito"), pt.size = 0)
+# We can observe the distribution of counts, detected features, 
+# and percentage mitochondrial counts across all cells in each object. 
+# While we're using the filtered matrix from Cell Ranger, 
+# sometimes low quality cells slip through.
+
+VlnPlot(batch4_merged,
+        c("nFeature_RNA", "nCount_RNA", "percent.mito"),
+        pt.size = 0)
+VlnPlot(batch3_merged,
+        c("nFeature_RNA", "nCount_RNA", "percent.mito"),
+        pt.size = 0)
+VlnPlot(batch1_merged,
+        c("nFeature_RNA", "nCount_RNA", "percent.mito"),
+        pt.size = 0)
 ```
 
 ```{r}
@@ -98,44 +135,72 @@ nFeature_cutoff <- 500
 nCount_cutoff <- 25000
 mito_cutoff <- 10
 
-batch4_merged <- subset(batch4_merged, subset = nFeature_RNA >= nFeature_cutoff & 
-                                              nCount_RNA <= nCount_cutoff &
-                                              percent.mito <= mito_cutoff)
+batch4_merged <-
+  subset(
+    batch4_merged,
+    subset = nFeature_RNA >= nFeature_cutoff &
+      nCount_RNA <= nCount_cutoff &
+      percent.mito <= mito_cutoff
+  )
 
-batch3_merged <- subset(batch3_merged, subset = nFeature_RNA >= nFeature_cutoff & 
-                                              nCount_RNA <= nCount_cutoff &
-                                              percent.mito <= mito_cutoff)
+batch3_merged <-
+  subset(
+    batch3_merged,
+    subset = nFeature_RNA >= nFeature_cutoff &
+      nCount_RNA <= nCount_cutoff &
+      percent.mito <= mito_cutoff
+  )
 
-batch1_merged <- subset(batch1_merged, subset = nFeature_RNA >= nFeature_cutoff & 
-                                              nCount_RNA <= nCount_cutoff &
-                                              percent.mito <= mito_cutoff)
+batch1_merged <-
+  subset(
+    batch1_merged,
+    subset = nFeature_RNA >= nFeature_cutoff &
+      nCount_RNA <= nCount_cutoff &
+      percent.mito <= mito_cutoff
+  )
 
 ```
 
 ```{r}
-VlnPlot(batch4_merged, c("nFeature_RNA", "nCount_RNA", "percent.mito"), pt.size = 0)
-VlnPlot(batch3_merged, c("nFeature_RNA", "nCount_RNA", "percent.mito"), pt.size = 0)
-VlnPlot(batch1_merged, c("nFeature_RNA", "nCount_RNA", "percent.mito"), pt.size = 0)
+VlnPlot(batch4_merged,
+        c("nFeature_RNA", "nCount_RNA", "percent.mito"),
+        pt.size = 0)
+VlnPlot(batch3_merged,
+        c("nFeature_RNA", "nCount_RNA", "percent.mito"),
+        pt.size = 0)
+VlnPlot(batch1_merged,
+        c("nFeature_RNA", "nCount_RNA", "percent.mito"),
+        pt.size = 0)
 ```
 
 ```{r, eval= FALSE}
-# Now we can combine everything together and remove batch effects through integration.
+# Now we can combine everything together and 
+# remove batch effects through integration.
 
 # First, normalize and find variable features in the individual objects
-batch4_merged <- batch4_merged %>% NormalizeData(.) %>% FindVariableFeatures(.)
-batch3_merged <- batch3_merged %>% NormalizeData(.) %>% FindVariableFeatures(.)
-batch1_merged <- batch1_merged %>% NormalizeData(.) %>% FindVariableFeatures(.)
+batch4_merged <-
+  batch4_merged %>% NormalizeData(.) %>% FindVariableFeatures(.)
+batch3_merged <-
+  batch3_merged %>% NormalizeData(.) %>% FindVariableFeatures(.)
+batch1_merged <-
+  batch1_merged %>% NormalizeData(.) %>% FindVariableFeatures(.)
 
 # Now we need to compute anchors for integration. Seurat uses CCA by default.
 
-# first select features for integration. These are the features that will be used for integration as well as included in the integrated (imputed) assay slot. (defaults to 2000, but we can up this if desired)
+# first select features for integration. 
+# These are the features that will be used for integration as well as included 
+# in the integrated (imputed) assay slot. 
+# (defaults to 2000, but we can up this if desired)
 
 # parallelization using the future package
 future::plan("multiprocess", workers = 4)
-options(future.globals.maxSize = 12000 * 1024^2)
+options(future.globals.maxSize = 12000 * 1024 ^ 2)
 
-anchors <- FindIntegrationAnchors(object.list = list(batch4_merged, batch3_merged, batch1_merged), 
-                                  anchor.features = 2500)
+anchors <-
+  FindIntegrationAnchors(
+    object.list = list(batch4_merged, batch3_merged, batch1_merged),
+    anchor.features = 2500
+  )
 integrated_object <- IntegrateData(anchors)
 
 future::plan("sequential")
