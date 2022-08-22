@@ -15,18 +15,20 @@ knitr::opts_chunk$set(echo = TRUE)
 ```
 
 ```{r, include = FALSE}
-Packages <- c("atvtrem2Combined", "dplyr", "Seurat", "aws.s3", "Matrix", "ggplot2")
+Packages <-
+  c("dplyr",
+    "Seurat",
+    "aws.s3",
+    "Matrix",
+    "ggplot2")
 lapply(Packages, library, character.only = TRUE)
 
 set.seed(1234)
-bucket <- "com.dnli.bioinfo.data/processed/internal/NGS000123/remapped"
 ```
 
 
 ```{r, include=FALSE}
-integrated_object <- aws.s3::s3readRDS(bucket = bucket,
-                                       object = "ATV-Trem2_APPKI_all_samples_integrated.Rds",
-                                       region = "us-west-2")
+integrated_object <- readRDS("~/ATV-Trem2_APPKI_all_samples_integrated.Rds")
 ```
 
 ```{r, include=FALSE}
@@ -64,29 +66,49 @@ DimPlot(integrated_object, label = T, split.by = "batch")
 
 # parallelization using the future package
 future::plan("multiprocess", workers = 6)
-options(future.globals.maxSize = 12000 * 1024^2)
+options(future.globals.maxSize = 12000 * 1024 ^ 2)
 
 DefaultAssay(integrated_object) <- "RNA"
 markers <- FindAllMarkers(integrated_object, only.pos = T)
 
 future::plan("default")
 
-write.csv(markers, file = "~/DNLI-21-236_ATV-Trem2_APPKI_timecourse/inst/extdata/cluster_markers.csv")
+write.csv(markers, file = "/inst/extdata/cluster_markers.csv")
 ```
 
 ```{r}
 DefaultAssay(integrated_object) <- "RNA"
-markers <- read.csv("~/DNLI-21-236_ATV-Trem2_APPKI_timecourse/inst/extdata/cluster_markers.csv", header = T, row.names = 1)
-top10 <- markers %>% group_by(cluster) %>% top_n(wt = avg_log2FC, n = 10)
+markers <-
+  read.csv("/inst/extdata/cluster_markers.csv",
+           header = T,
+           row.names = 1)
+top10 <-
+  markers %>% 
+  group_by(cluster) %>% 
+  top_n(wt = avg_log2FC, n = 10)
 ```
 
 ```{r, fig.width=12, fig.height=5}
-FeaturePlot(integrated_object, features = c("F13a1", "Ccr2", "Cd3g","Retnlg", "Sparcl1", "Mog", "nFeature_RNA", "P2ry12"), ncol = 4)
+FeaturePlot(
+  integrated_object,
+  features = c(
+    "F13a1",
+    "Ccr2",
+    "Cd3g",
+    "Retnlg",
+    "Sparcl1",
+    "Mog",
+    "nFeature_RNA",
+    "P2ry12"
+  ),
+  ncol = 4
+)
 ```
 
 
 ```{r, include=FALSE, eval=FALSE}
-microglia <- subset(integrated_object, subset = seurat_clusters %in% c(0,1,2,3,4,5))
+microglia <-
+  subset(integrated_object, subset = seurat_clusters %in% c(0, 1, 2, 3, 4, 5))
 ```
 
 
@@ -95,28 +117,30 @@ microglia <- subset(integrated_object, subset = seurat_clusters %in% c(0,1,2,3,4
 object_list <- SplitObject(microglia, split.by = "batch")
 
 
-object_list <- lapply(object_list, FUN = function(x){
-  DefaultAssay(x) <- "RNA"
-  x <- NormalizeData(x)
-  x <- FindVariableFeatures(x)
-})
+object_list <- lapply(
+  object_list,
+  FUN = function(x) {
+    DefaultAssay(x) <- "RNA"
+    x <- NormalizeData(x)
+    x <- FindVariableFeatures(x)
+  }
+)
 
 # parallelization using the future package
 future::plan("multiprocess", workers = 4)
-options(future.globals.maxSize = 12000 * 1024^2)
+options(future.globals.maxSize = 12000 * 1024 ^ 2)
 
 features <- SelectIntegrationFeatures(object_list, nfeatures = 2500)
-anchors <- FindIntegrationAnchors(object_list, anchor.features = features)
+anchors <-
+  FindIntegrationAnchors(object_list, anchor.features = features)
 
 future::plan("default")
 
 microglia_integrated <- IntegrateData(anchors)
 
-saveRDS(microglia_integrated, file ="~/NGS000123_objects/ATV-Trem2_APPKI_microglia_integrated.Rds")
+saveRDS(microglia_integrated, 
+        file = "/ATV-Trem2_APPKI_microglia_integrated.Rds")
 
 rm(anchors)
 rm(object_list)
 ```
-
-
-
