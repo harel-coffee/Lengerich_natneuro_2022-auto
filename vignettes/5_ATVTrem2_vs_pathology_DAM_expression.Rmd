@@ -13,7 +13,6 @@ output:
 ```{r, include = FALSE}
 Packages <-
   c(
-    "atvtrem2Combined",
     "dplyr",
     "Seurat",
     "aws.s3",
@@ -42,423 +41,73 @@ gg_color_hue <- function(n) {
 ```
 
 
-
-We're going to look at how DAM-like microglia are induced by both ATV:Trem2 
-treatments and real AD-like pathology (Abeta plaques). We'll take both: 
-
-- Study 2 data set (APP KI mice treated with ATV:Trem2) and the 
-- Study 1 data set (the original ATV-Trem2 treated mouse scRNA-seq. All WT). 
-
-
-We'll do some expression comparisons at the pseudobulk level 
-and also combine everything together to see how the populations cluster.
-
-The main goal of this analysis is to answer the question: 
-**How similar are ATV:Trem2-activated microglia to patholgy-activated microglia?**
-
-```{r, include=FALSE}
-microglia_Study1 <- s3readRDS(bucket = bucket2,
-                                     object = "Study1_final_seurat_object.RDS",
-                                     region = "us-west-2")
-
-microglia_Study2 <- s3readRDS(bucket = bucket1,
-                                      object = "ATV-Trem2_APPKI_microglia_analyzed.Rds",
-                                      region = "us-west-2")
-```
-
-```{r, include=FALSE}
-
-## going to make some name changes to comply with limma naming conventions
-microglia_Study2$group <- plyr::mapvalues(microglia_Study2$group, from = c('WT_ATV-DNP02',      
-                                                                         'WT_ATV-4D9',        
-                                                                         'APP-SAA_ATV-DNP02', 
-                                                                         'APP-SAA_ATV-4D9',   
-                                                                         'APP-SAA 4D9'),
-                                                                  to = c("Study2_WT_ATV_DNP02",
-                                                                         "Study2_WT_ATV_4D9",
-                                                                         "Study2_APP_SAA_ATV_DNP02",
-                                                                         "Study2_APP_SAA_ATV_4D9",
-                                                                         "Study2_APP_SAA_4D9"))
-
-microglia_Study2$group <- factor(microglia_Study2$group, levels = c("Study2_WT_ATV_DNP02",
-                                                                    "Study2_WT_ATV_4D9",
-                                                                    "Study2_APP_SAA_ATV_DNP02",
-                                                                    "Study2_APP_SAA_4D9",
-                                                                    "Study2_APP_SAA_ATV_4D9"))
-
-
-microglia_Study2$mouse <- paste0(microglia_Study2$group, "_",microglia_Study2$sample)
-```
-
-```{r}
-## Now I'll do the same for Study1
-
-microglia_Study1$group <- plyr::mapvalues(microglia_Study1$group, from = c("ATV:RSV",
-                                                                         "days_01",
-                                                                         "days_07",
-                                                                         "days_14",
-                                                                         "days_28"),
-                                                                to = c("Study1_WT_ATV_RSV",
-                                                                       "Study1_WT_ATV_4D9_day1",
-                                                                       "Study1_WT_ATV_4D9_day7",
-                                                                       "Study1_WT_ATV_4D9_day14",
-                                                                       "Study1_WT_ATV_4D9_day28"))
-
-microglia_Study1$mouse <- paste0(microglia_Study1$group, "_",microglia_Study1$sample_id)
-
-```
-
-```{r}
-# renaming clusters to match the manuscript names
-microglia_Study1$named_clusters <- plyr::mapvalues(Idents(microglia_Study1), 
-                                                  from = c("0", "3", "11", "6", "9", "10", "16", "7", "1", "5", "13", "4", "8", "2"),
-                                                  to = c("Homeo1",
-                                                         "Hm0",
-                                                         "Hm1",
-                                                         "DAMa",
-                                                         "DAMb",
-                                                         "Cyc-M",
-                                                         "IFN",
-                                                         "pDAM",
-                                                         "Homeo2",
-                                                         "Hm2",
-                                                         "IFN-basal",
-                                                         "Hm3",
-                                                         "Hm4",
-                                                         "Hm5"))
-
-
-# define colors for the NGS00073 dataset
-clusters <- unique(microglia_Study1$named_clusters)
-cols.universe <- dittoSeq::dittoColors()
-
-colors.explicit <- c(
-      "DAMa" = cols.universe[1],
-      "DAMb" = cols.universe[6],
-      "pDAM" = cols.universe[4],
-      "IFN" = cols.universe[7],
-      "IFN-basal" = cols.universe[15],
-      "Cyc-M" = cols.universe[3],
-      "Homeo1" = cols.universe[5],
-      "Homeo2" = cols.universe[2])
-
-out <- c(
-    colors.explicit,
-    setNames(
-      setdiff(cols.universe, colors.explicit),
-      setdiff(clusters, names(colors.explicit))))
-
-out <- out[!is.na(names(out))]
-```
-
-As a reminder, here are the clusters found in each experiment:
-
-```{r}
-p1 <- DimPlot(microglia_Study1, group.by = "named_clusters", cols = out) + NoAxes() + ggtitle("Figure1 UMAP")
-```
-
-```{r, fig.width=18, fig.height=4}
-DimPlot(microglia_Study1, group.by = "named_clusters", cols = out, split.by = "group") + NoAxes() + ggtitle("Figure1 UMAP")
-```
-
-```{r}
-p2 <- DimPlot(microglia_Study2, 
-        group.by = "seurat_clusters") +
-  NoAxes() + 
-  ggtitle("Figure?? UMAP")
-```
-
-```{r, fig.width=7, fig.height=3}
-p1 + p2
-```
-
-But we need to define some cluster names for the new data set.
-
-```{r}
-microglia_Study2$named_clusters <- plyr::mapvalues(microglia_Study2$seurat_clusters,
-                                                   from = c(0,1,2,3,4,5,6,7,8),
-                                                   to = c("Homeostatic1",
-                                                          "AbActivated1",
-                                                          "Homeostatic2",
-                                                          "TgActivated1",
-                                                          "AbActivated2",
-                                                          "AbTgActivated",
-                                                          "TgActivated2",
-                                                          "AbActivated3",
-                                                          "TgActivated3"))
-
-
-microglia_Study2$named_clusters <- factor(microglia_Study2$named_clusters,
-                                          levels = c("Homeostatic1",
-                                                      "Homeostatic2",
-                                                      "AbActivated1",
-                                                      "AbActivated2",
-                                                      "AbActivated3",
-                                                      "TgActivated1",
-                                                      "TgActivated2",
-                                                      "TgActivated3",
-                                                      "AbTgActivated"))
-
-cols_123 <- c(out[c(7, 8, 1, 2, 6)], "mediumpurple3", "coral2", "gray60", out[5])
-names(cols_123) <- levels(microglia_Study2$named_clusters)
-```
-
-```{r}
-p2n <- DimPlot(microglia_Study2, 
-        group.by = "named_clusters", 
-        cols = cols_123) + 
-  NoAxes() + 
-  ggtitle("Figure?? UMAP")
-```
-
-```{r, fig.width=10, fig.height=3.5}
-p1 + p2n
-```
-
-```{r, include=FALSE}
-totals_73 <- as.data.frame((table(microglia_Study1$named_clusters, microglia_Study1$sample_id))) %>%
-  group_by(Var2) %>%
-  mutate(percent = Freq/sum(Freq) *100)
-
-colnames(totals_73) <- c("State", "sample_id", "Count", "Percent")
-
-meta_slim <- microglia_Study1@meta.data %>% select(c(group, treatment, sample_id)) %>% distinct(.)
-
-totals_73 <- totals_73 %>%
-  left_join(meta_slim, by = "sample_id")
-```
-
-```{r, echo=FALSE, fig.width=10, fig.height=6}
-ggplot(totals_73, aes(x = sample_id, y = Percent, fill = State)) +
-  geom_bar(stat="identity") + 
-  theme_bw() +
-  theme(axis.text.x = element_text(angle = 45, vjust = 0.5, hjust=0.5)) +
-  coord_flip() +
-  scale_fill_manual(values = out) +
-  facet_wrap(~group, scales= "free")
-```
-
-```{r, fig.width=12, fig.height=6, message=FALSE, echo=FALSE}
-ggplot(totals_73, aes(x = group, y = Percent, fill = State)) +
-  geom_bar(stat = "summary") +
-  geom_point() +
-  scale_fill_manual(values = out) +
-  theme_bw()+
-  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1)) +
-  facet_wrap(~State, ncol = 5, scale = "free_y")
-```
-
-
-```{r, include=FALSE}
-totals_123 <- as.data.frame((table(microglia_Study2$named_clusters, microglia_Study2$sample))) %>%
-  group_by(Var2) %>%
-  mutate(percent = Freq/sum(Freq) *100)
-
-colnames(totals_123) <- c("State", "sample", "Count", "Percent")
-
-meta_slim <- microglia_Study2@meta.data %>% select(c(genotype, group, treatment, sample)) %>% distinct(.)
-
-totals_123 <- totals_123 %>%
-  left_join(meta_slim, by = "sample")
-```
-
-```{r, echo=FALSE, fig.width=10, fig.height=6}
-ggplot(totals_123, aes(x = sample, y = Percent, fill = State)) +
-  geom_bar(stat="identity") + 
-  theme_bw() +
-  theme(axis.text.x = element_text(angle = 45, vjust = 0.5, hjust=0.5)) +
-  coord_flip() +
-  scale_fill_manual(values = cols_123) +
-  facet_wrap(~group, scales= "free")
-```
-
-```{r, fig.width=12, fig.height=6, message=FALSE, echo=FALSE}
-ggplot(totals_123, aes(x = group, y = Percent, fill = State)) +
-  geom_bar(stat = "summary") +
-  geom_point() +
-  scale_fill_manual(values = cols_123) +
-  theme_bw()+
-  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1)) +
-  facet_wrap(~State, ncol = 5, scale = "free_y")
-```
-
-
-
-Ok now we've thoroughly explored how these clusters are distributed across conditions. And now we can be pretty confident we have unqiue effects of Trem2 Ab and pathology. Let's ask how these clusters are different from one another. 
-
-We're going to group together the Ab-activated clusters and the Tg-activated clusters for simplicity. Then we'll do pseudobulk DE analysis to get a big picture view of what genes are most representative of the differences between pathology-induced DAMs and ATV::Trem2-induced "DAMs".
-
-```{r}
-microglia_Study2$broad_clusters <- plyr::mapvalues(microglia_Study2$named_clusters, 
-                                                   from = c("Homeostatic1",
-                                                      "Homeostatic2",
-                                                      "AbActivated1",
-                                                      "AbActivated2",
-                                                      "AbActivated3",
-                                                      "TgActivated1",
-                                                      "TgActivated2",
-                                                      "TgActivated3",
-                                                      "AbTgActivated"),
-                                                   to = c("Homeostatic",
-                                                          "Homeostatic",
-                                                          "ATVTrem2_DAMs",
-                                                          "ATVTrem2_DAMs",
-                                                          "ATVTrem2_DAMs",
-                                                          "Pathology_DAMs",
-                                                          "Pathology_DAMs",
-                                                          "Pathology_DAMs",
-                                                          "AbTg_DAMs"))
-
-```
-
-```{r}
-DimPlot(microglia_Study2, group.by = "broad_clusters")
-```
-
-```{r}
-sce <- as.SingleCellExperiment(microglia_Study2)
-
-meta <- transform(microglia_Study2@meta.data)
-## Pick the meta data we want to aggregate by
-agg.df <- DataFrame(
-    sample = meta$sample,
-    cell_type = meta$broad_clusters,
-    group = meta$group)
-        
-## Perform aggregation across these covariates and then build DGEList object
-
-pbulk <- scuttle::aggregateAcrossCells(sce, ids = agg.df, use.altexps = F)
-pbulk$bulk_cell <- paste0(pbulk$sample, "_", pbulk$cell_type, "_", pbulk$group)
-pbulk_dge <- edgeR::DGEList(counts = counts(pbulk), 
-                                       samples= colData(pbulk), 
-                                       group = colData(pbulk)$cell_type)
-```
-
-```{r}
-design <- model.matrix(~0 + cell_type,
-                       data = pbulk_dge$samples)
-colnames(design) <- sub("^cell_type", "", colnames(design))
-
-fit <- voomLmFit(pbulk_dge, design = design, plot = T)
-contrasts <- makeContrasts("Ab_vs_Tg" = "ATVTrem2_DAMs-Pathology_DAMs",
-                            "Ab_vs_Hom" = "ATVTrem2_DAMs-Homeostatic",
-                            "Tg_vs_Hom" = "Pathology_DAMs-Homeostatic",
-                            "AbTg_vs_Tg" = "AbTg_DAMs-Pathology_DAMs",
-                            levels = design)
-
-fit2 <- contrasts.fit(fit, contrasts = contrasts)
-fit2 <- eBayes(fit2, robust = FALSE)
-```
-
-```{r}
-comps <- colnames(contrasts)
-
-# Extract comparisons
-toptables <- lapply(comps, function(x){
-  tt <- topTable(fit2, coef = x, number = Inf) %>%
-                    dplyr::mutate(Gene = rownames(.)) %>%
-                    dplyr::mutate(FDR = adj.P.Val) %>%
-                    dplyr::mutate(feature_id = Gene)
-    rownames(tt) <- tt$feature_id
-    tt
-})
-
-names(toptables) <- comps
-```
-
-```{r}
-genes_to_plot <- c("Apoe", "Trem2", "Cst7", "Clec7a", "Lpl", "Ccl4", "Top2a", "Mki67", "Ifitm3", "Isg15", "Gpnmb", "Spp1", "Aldoa", "Gapdh", "Mif", "Cox5a", "Ldha")
-```
-
-```{r}
-simpleVolcano(DE = toptables$Ab_vs_Tg, 
-              fcColumn = "logFC", 
-              pColumn = "adj.P.Val", 
-              geneCol = "Gene", 
-              labels = genes_to_plot) +
-  ggtitle("ATV:Trem2 DAMs vs Pathology DAMs")
-```
-
-```{r}
-simpleVolcano(DE = toptables$Ab_vs_Hom, 
-              fcColumn = "logFC", 
-              pColumn = "adj.P.Val", 
-              geneCol = "Gene", 
-              labels = genes_to_plot) +
-  ggtitle("ATV:Trem2 DAMs vs Homeostatic")
-```
-
-```{r}
-simpleVolcano(DE = toptables$Tg_vs_Hom, 
-              fcColumn = "logFC", 
-              pColumn = "adj.P.Val", 
-              geneCol = "Gene", 
-              labels = genes_to_plot) +
-  ggtitle("Pathology DAMs vs Homeostatic")
-```
-
-```{r}
-simpleVolcano(DE = toptables$AbTg_vs_Tg, 
-              fcColumn = "logFC", 
-              pColumn = "adj.P.Val", 
-              geneCol = "Gene", 
-              labels = genes_to_plot) +
-  ggtitle("Pathology + ATV:Trem2 DAMs vs Pathology Alone DAMs")
-```
-
 # Combined Object
 ```{r}
-combined <- readRDS("~/atvTrem2_combined_objects/combined_object.Rds")
+combined <- readRDS("~/combined_object.Rds")
 
-combined$mouse <- paste0(combined$group, "_",combined$sample_id)
+combined$mouse <- paste0(combined$group, "_", combined$sample_id)
 
-# We will combine clusters 0 and 1 into a single homeostatic cluster for simplicity
-combined$clusters <- plyr::mapvalues(combined$seurat_clusters,
-                                     from = c(0,1,2,3,4,5),
-                                     to = c("Homeostatic",
-                                            "Homeostatic",
-                                            "cluster2",
-                                            "cluster3",
-                                            "cluster4",
-                                            "cluster5"))
+# We will combine clusters 0 and 1 into 
+# a single homeostatic cluster for simplicity
+combined$clusters <- plyr::mapvalues(
+  combined$seurat_clusters,
+  from = c(0, 1, 2, 3, 4, 5),
+  to = c(
+    "Homeostatic",
+    "Homeostatic",
+    "cluster2",
+    "cluster3",
+    "cluster4",
+    "cluster5"
+  )
+)
 ```
 
 ```{r}
-DimPlot(combined, group.by = "clusters", cols = brewer.pal("Dark2", n = 6)[c(1,3:6)])
+DimPlot(combined, 
+        group.by = "clusters", 
+        cols = brewer.pal("Dark2", n = 6)[c(1, 3:6)])
 ```
 
 ```{r}
-DefaultAssay(combined) <- "RNA" 
+DefaultAssay(combined) <- "RNA"
 sce2 <- as.SingleCellExperiment(combined)
 
 meta2 <- transform(combined@meta.data)
 ## Pick the meta data we want to aggregate by
 agg.df2 <- DataFrame(
-    sample = meta2$sample_id,
-    cluster = meta2$clusters,
-    group = meta2$group)
-        
+  sample = meta2$sample_id,
+  cluster = meta2$clusters,
+  group = meta2$group
+)
+
 ## Perform aggregation across these covariates and then build DGEList object
 
-pbulk2 <- scuttle::aggregateAcrossCells(sce2, ids = agg.df2, use.altexps = F)
-pbulk2$bulk_cell <- paste0(pbulk2$sample, "_", pbulk2$cluster, "_", pbulk2$group)
-pbulk_dge2 <- edgeR::DGEList(counts = counts(pbulk2), 
-                                       samples= colData(pbulk2), 
-                                       group = colData(pbulk2)$cluster)
+pbulk2 <-
+  scuttle::aggregateAcrossCells(sce2, ids = agg.df2, use.altexps = F)
+pbulk2$bulk_cell <-
+  paste0(pbulk2$sample, "_", pbulk2$cluster, "_", pbulk2$group)
+pbulk_dge2 <- edgeR::DGEList(
+  counts = counts(pbulk2),
+  samples = colData(pbulk2),
+  group = colData(pbulk2)$cluster
+)
 ```
 
 ```{r}
-design <- model.matrix(~ 0 + cluster + study,
-                       data = pbulk_dge2$samples)
+design <- model.matrix( ~ 0 + cluster + study,
+                        data = pbulk_dge2$samples)
 colnames(design) <- sub("^cluster", "", colnames(design))
 
 fit <- voomLmFit(pbulk_dge2, design = design, plot = T)
-contrasts <- makeContrasts("2_vs_Hom" = "cluster2-Homeostatic",
-                            "3_vs_Hom" = "cluster3-Homeostatic",
-                            "4_vs_Hom" = "cluster4-Homeostatic",
-                            "5_vs_Hom" = "cluster5-Homeostatic",
-                            "4_vs_3" = "cluster4-cluster3",
-                            levels = design)
+contrasts <- makeContrasts(
+  "2_vs_Hom" = "cluster2-Homeostatic",
+  "3_vs_Hom" = "cluster3-Homeostatic",
+  "4_vs_Hom" = "cluster4-Homeostatic",
+  "5_vs_Hom" = "cluster5-Homeostatic",
+  "4_vs_3" = "cluster4-cluster3",
+  levels = design
+)
 
 fit2 <- contrasts.fit(fit, contrasts = contrasts)
 fit2 <- eBayes(fit2, robust = FALSE)
@@ -468,90 +117,115 @@ fit2 <- eBayes(fit2, robust = FALSE)
 comps <- colnames(contrasts)
 
 # Extract comparisons
-toptables <- lapply(comps, function(x){
+toptables <- lapply(comps, function(x) {
   tt <- topTable(fit2, coef = x, number = Inf) %>%
-                    dplyr::mutate(Gene = rownames(.)) %>%
-                    dplyr::mutate(FDR = adj.P.Val) %>%
-                    dplyr::mutate(feature_id = Gene)
-    rownames(tt) <- tt$feature_id
-    tt
+    dplyr::mutate(Gene = rownames(.)) %>%
+    dplyr::mutate(FDR = adj.P.Val) %>%
+    dplyr::mutate(feature_id = Gene)
+  rownames(tt) <- tt$feature_id
+  tt
 })
 
 names(toptables) <- comps
 ```
 
 ```{r}
-genes_to_plot <- c("Apoe", "Cst7", "Lpl", "Ccl4", "Top2a", "Mki67", "Ifitm3", "Isg15", "Gpnmb", "Spp1", "Mif", "Ldha", "Cox5a")
+genes_to_plot <-
+  c(
+    "Apoe",
+    "Cst7",
+    "Lpl",
+    "Ccl4",
+    "Top2a",
+    "Mki67",
+    "Ifitm3",
+    "Isg15",
+    "Gpnmb",
+    "Spp1",
+    "Mif",
+    "Ldha",
+    "Cox5a"
+  )
 ```
 
 ```{r}
-simpleVolcano(DE = toptables$`2_vs_Hom`, 
-              fcColumn = "logFC", 
-              pColumn = "adj.P.Val", 
-              geneCol = "Gene", 
-              labels = genes_to_plot) +
+simpleVolcano(
+  DE = toptables$`2_vs_Hom`,
+  fcColumn = "logFC",
+  pColumn = "adj.P.Val",
+  geneCol = "Gene",
+  labels = genes_to_plot
+) +
   ggtitle("Cluster2 vs Homeostatic")
 ```
 
 ```{r}
-simpleVolcano(DE = toptables$`3_vs_Hom`, 
-              fcColumn = "logFC", 
-              pColumn = "adj.P.Val", 
-              geneCol = "Gene", 
-              labels = genes_to_plot) +
+simpleVolcano(
+  DE = toptables$`3_vs_Hom`,
+  fcColumn = "logFC",
+  pColumn = "adj.P.Val",
+  geneCol = "Gene",
+  labels = genes_to_plot
+) +
   ggtitle("Cluster3 vs Homeostatic")
 ```
 
 ```{r}
-simpleVolcano(DE = toptables$`4_vs_Hom`, 
-              fcColumn = "logFC", 
-              pColumn = "adj.P.Val", 
-              geneCol = "Gene", 
-              labels = genes_to_plot) +
+simpleVolcano(
+  DE = toptables$`4_vs_Hom`,
+  fcColumn = "logFC",
+  pColumn = "adj.P.Val",
+  geneCol = "Gene",
+  labels = genes_to_plot
+) +
   ggtitle("Cluster4 vs Homeostatic")
 ```
 
 ```{r}
-simpleVolcano(DE = toptables$`5_vs_Hom`, 
-              fcColumn = "logFC", 
-              pColumn = "adj.P.Val", 
-              geneCol = "Gene", 
-              labels = genes_to_plot) +
+simpleVolcano(
+  DE = toptables$`5_vs_Hom`,
+  fcColumn = "logFC",
+  pColumn = "adj.P.Val",
+  geneCol = "Gene",
+  labels = genes_to_plot
+) +
   ggtitle("Cluster5 vs Homeostatic")
 ```
 
 ```{r}
-simpleVolcano(DE = toptables$`4_vs_3`, 
-              fcColumn = "logFC", 
-              pColumn = "adj.P.Val", 
-              geneCol = "Gene", 
-              labels = genes_to_plot) +
+simpleVolcano(
+  DE = toptables$`4_vs_3`,
+  fcColumn = "logFC",
+  pColumn = "adj.P.Val",
+  geneCol = "Gene",
+  labels = genes_to_plot
+) +
   ggtitle("Cluster4 vs Cluster3")
 ```
 
 ```{r}
-toptables_df <- purrr::map_df(comps, function(x){
+toptables_df <- purrr::map_df(comps, function(x) {
   tt <- topTable(fit2, coef = x, number = Inf) %>%
-                    dplyr::mutate(Gene = rownames(.)) %>%
-                    dplyr::mutate(FDR = adj.P.Val) %>%
-                    dplyr::mutate(feature_id = Gene)
-    rownames(tt) <- tt$feature_id
-    tt %>% mutate(comp = x)
+    dplyr::mutate(Gene = rownames(.)) %>%
+    dplyr::mutate(FDR = adj.P.Val) %>%
+    dplyr::mutate(feature_id = Gene)
+  rownames(tt) <- tt$feature_id
+  tt %>% mutate(comp = x)
 })
 
 logFC_df <- toptables_df %>%
   dplyr::filter(comp != "4_vs_3") %>%
   group_by(Gene) %>%
   dplyr::mutate(pval.min = min(adj.P.Val)) %>%
-  dplyr::filter(pval.min <= 0.01)  %>% 
-  dplyr::select(c(Gene, logFC, comp)) %>% 
+  dplyr::filter(pval.min <= 0.01)  %>%
+  dplyr::select(c(Gene, logFC, comp)) %>%
   tidyr::pivot_wider(names_from = comp, values_from = logFC) %>%
   dplyr::ungroup()
 
 logFC_mat <- as.matrix(logFC_df %>% dplyr::select(-Gene))
 rownames(logFC_mat) <- logFC_df$Gene
 
-chen_sigs <- read.csv("~/atvTrem2_combined_scRNAseq/inst/extdata/state_signatures.csv") %>%
+chen_sigs <- read.csv("/inst/extdata/state_signatures.csv") %>%
   dplyr::filter(collection == "ChenColonna2021") %>%
   dplyr::filter(symbol %in% logFC_df$Gene)
 
@@ -560,24 +234,28 @@ chen_sigs <- read.csv("~/atvTrem2_combined_scRNAseq/inst/extdata/state_signature
 
 sig_df <- toptables_df %>%
   dplyr::filter(comp != "4_vs_3") %>%
-  dplyr::select(c(Gene, adj.P.Val, comp)) %>% 
+  dplyr::select(c(Gene, adj.P.Val, comp)) %>%
   tidyr::pivot_wider(names_from = comp, values_from = adj.P.Val)
 
-sig_df[, -1] <- ifelse(sig_df <= 0.05, 1, 0)[,-1]
+sig_df[,-1] <- ifelse(sig_df <= 0.05, 1, 0)[, -1]
 ```
 
 ```{r}
-cols <- rev(colorRampPalette(RColorBrewer::brewer.pal(11, "RdBu"))(256))
+cols <-
+  rev(colorRampPalette(RColorBrewer::brewer.pal(11, "RdBu"))(256))
 cols <- colorRampPalette(c("blue3", "White", "red3"))(256)
 
-breaks <- c(seq(min(logFC_mat), 0, length.out = ceiling(256/2)),
-            seq(max(logFC_mat)/256, max(logFC_mat), length.out = floor(256/2)))
+breaks <- c(seq(min(logFC_mat), 0, length.out = ceiling(256 / 2)),
+            seq(max(logFC_mat) / 256, max(logFC_mat), length.out = floor(256 /
+                                                                           2)))
 
 
-heatmap_genes <- c(chen_sigs$symbol, "Aldoa", "Gapdh", "Mif", "Cox5a", "Ldha")
-toPlot <- logFC_mat[heatmap_genes,]
+heatmap_genes <-
+  c(chen_sigs$symbol, "Aldoa", "Gapdh", "Mif", "Cox5a", "Ldha")
+toPlot <- logFC_mat[heatmap_genes, ]
 
-sig_df <- sig_df %>% dplyr::filter(Gene %in% heatmap_genes) %>% as.data.frame()
+sig_df <-
+  sig_df %>% dplyr::filter(Gene %in% heatmap_genes) %>% as.data.frame()
 rownames(sig_df) <- sig_df$Gene
 sig_df <- sig_df %>% select(-Gene)
 
@@ -586,104 +264,148 @@ sig_df$`3_vs_Hom` <- as.character(sig_df$`3_vs_Hom`)
 sig_df$`4_vs_Hom` <- as.character(sig_df$`4_vs_Hom`)
 sig_df$`5_vs_Hom` <- as.character(sig_df$`5_vs_Hom`)
 
-sig_colors <- list(`2_vs_Hom` = c(`0` = "White", `1` = "gray40"),
-                   `3_vs_Hom` = c(`0` = "White", `1` = "gray40"),
-                   `4_vs_Hom` = c(`0` = "White", `1` = "gray40"),
-                   `5_vs_Hom` = c(`0` = "White", `1` = "gray40"))
+sig_colors <- list(
+  `2_vs_Hom` = c(`0` = "White", `1` = "gray40"),
+  `3_vs_Hom` = c(`0` = "White", `1` = "gray40"),
+  `4_vs_Hom` = c(`0` = "White", `1` = "gray40"),
+  `5_vs_Hom` = c(`0` = "White", `1` = "gray40")
+)
 
 
-logFC_df <- logFC_df %>% group_by(Gene) %>% dplyr::mutate(avg_2_4 = mean(c(`2_vs_Hom`, `2_vs_Hom`))) 
-logFC_df <- logFC_df %>% dplyr::mutate(label = ifelse(Gene %in% genes_to_plot, "yes", "no"))
+logFC_df <-
+  logFC_df %>% group_by(Gene) %>% 
+  dplyr::mutate(avg_2_4 = mean(c(`2_vs_Hom`, `2_vs_Hom`)))
+
+logFC_df <-
+  logFC_df %>% 
+  dplyr::mutate(label = ifelse(Gene %in% genes_to_plot, "yes", "no"))
 ```
 
 ```{r, fig.width=4.5, fig.height=8.5}
-pheatmap::pheatmap(mat = toPlot[c(1:5, 16:40, 50:55, 56:nrow(toPlot), 41:45),], 
-                   scale = "none",
-                   cluster_cols = F, 
-                   cluster_rows = F, 
-                   show_rownames = T,
-                   show_colnames = T, 
-                   annotation_row = rev(sig_df), 
-                   annotation_colors = sig_colors,
-                   breaks = breaks,
-                   gaps_row = c(5, 30, 36, 41, 46),
-                   main = "Chen/Colonna Review Signature Genes",
-                   color = cols)
+pheatmap::pheatmap(
+  mat = toPlot[c(1:5, 16:40, 50:55, 56:nrow(toPlot), 41:45), ],
+  scale = "none",
+  cluster_cols = F,
+  cluster_rows = F,
+  show_rownames = T,
+  show_colnames = T,
+  annotation_row = rev(sig_df),
+  annotation_colors = sig_colors,
+  breaks = breaks,
+  gaps_row = c(5, 30, 36, 41, 46),
+  main = "Chen/Colonna Review Signature Genes",
+  color = cols
+)
 ```
 
 ```{r}
 gdb <- getMSigGeneSetDb(c("h"), "mouse", id.type = "symbol")
 
 
-gsea_df <- purrr::map_df(toptables, function(tt){
-      sparrow_h <- sparrow::seas(x = tt, gsd = gdb, methods = "fgsea", rank_by = "t")
-      gsea.h.res <- as.data.frame(result(sparrow_h, 'fgsea'))
-
+gsea_df <- purrr::map_df(toptables, function(tt) {
+  sparrow_h <-
+    sparrow::seas(
+      x = tt,
+      gsd = gdb,
+      methods = "fgsea",
+      rank_by = "t"
+    )
+  gsea.h.res <- as.data.frame(result(sparrow_h, 'fgsea'))
+  
 }, .id = "comp")
 ```
 
 
 ```{r}
-gsea_df <- gsea_df %>% dplyr::filter(name %in% c("HALLMARK_G2M_CHECKPOINT",
-                                                 "HALLMARK_MYC_TARGETS_V1",
-                                                 "HALLMARK_GLYCOLYSIS",
-                                                 "HALLMARK_FATTY_ACID_METABOLISM",
-                                                 "HALLMARK_OXIDATIVE_PHOSPHORYLATION",
-                                                 "HALLMARK_CHOLESTEROL_HOMEOSTASIS",
-                                                 "HALLMARK_ALLOGRAFT_REJECTION",
-                                                 "HALLMARK_INTERFERON_ALPHA_RESPONSE",
-                                                 "HALLMARK_INTERFERON_GAMMA_RESPONSE",
-                                                 "HALLMARK_TNFA_SIGNALING_VIA_NFKB"))
+gsea_df <-
+  gsea_df %>% dplyr::filter(
+    name %in% c(
+      "HALLMARK_G2M_CHECKPOINT",
+      "HALLMARK_MYC_TARGETS_V1",
+      "HALLMARK_GLYCOLYSIS",
+      "HALLMARK_FATTY_ACID_METABOLISM",
+      "HALLMARK_OXIDATIVE_PHOSPHORYLATION",
+      "HALLMARK_CHOLESTEROL_HOMEOSTASIS",
+      "HALLMARK_ALLOGRAFT_REJECTION",
+      "HALLMARK_INTERFERON_ALPHA_RESPONSE",
+      "HALLMARK_INTERFERON_GAMMA_RESPONSE",
+      "HALLMARK_TNFA_SIGNALING_VIA_NFKB"
+    )
+  )
 
-gsea_df$name <- sub("HALLMARK_", "",gsea_df$name)
-gsea_df$name <- sub("_", " ",gsea_df$name)
-gsea_df$name <- sub("_", " ",gsea_df$name)
+gsea_df$name <- sub("HALLMARK_", "", gsea_df$name)
+gsea_df$name <- sub("_", " ", gsea_df$name)
+gsea_df$name <- sub("_", " ", gsea_df$name)
 
 gsea_df <- gsea_df %>% dplyr::filter(comp != "4_vs_3")
-gsea_df <- gsea_df %>% dplyr::mutate(direction = ifelse(NES >=0, "up", "down"))
+gsea_df <-
+  gsea_df %>% dplyr::mutate(direction = ifelse(NES >= 0, "up", "down"))
 ```
 
 ```{r, fig.width=3, fig.height=3}
-ggplot(gsea_df, aes(x = comp, y = name, color = direction, size = -log10(padj))) +
+ggplot(gsea_df, aes(
+  x = comp,
+  y = name,
+  color = direction,
+  size = -log10(padj)
+)) +
   geom_point() +
   scale_color_manual(values = c("blue2", "red2")) +
   theme_bw()
 ```
 
 ```{r, fig.width=2.5, fig.height=2.5}
-ggplot(logFC_df, aes(x = `3_vs_Hom`, y = `2_vs_Hom`, color = label, size = label)) + 
+ggplot(logFC_df,
+       aes(
+         x = `3_vs_Hom`,
+         y = `2_vs_Hom`,
+         color = label,
+         size = label
+       )) +
   geom_point() +
   theme_bw() +
   ylim(c(-2.5, 6.25)) +
   xlim(c(-2.5, 6.25)) +
   scale_size_manual(values = c(0.1, 2)) +
   scale_color_manual(values = c("gray80", "Orange2")) +
-    geom_hline(yintercept = 0) +
+  geom_hline(yintercept = 0) +
   geom_vline(xintercept = 0) +
   geom_abline(slope = 1, linetype = "dashed") +
-  ggrepel::geom_label_repel(label = ifelse(logFC_df$label == "yes",
-                       logFC_df$Gene,
-                       NA),
-      box.padding = unit(0.25, "lines"),
-      hjust = 0.25, max.overlaps = 100) +
+  ggrepel::geom_label_repel(
+    label = ifelse(logFC_df$label == "yes",
+                   logFC_df$Gene,
+                   NA),
+    box.padding = unit(0.25, "lines"),
+    hjust = 0.25,
+    max.overlaps = 100
+  ) +
   theme(legend.position = "none")
 ```
 
 ```{r, fig.width=2.5, fig.height=2.5}
-ggplot(logFC_df, aes(x = `3_vs_Hom`, y = `5_vs_Hom`, color = label, size = label)) + 
+ggplot(logFC_df,
+       aes(
+         x = `3_vs_Hom`,
+         y = `5_vs_Hom`,
+         color = label,
+         size = label
+       )) +
   geom_point() +
   theme_bw() +
   ylim(c(-2.5, 6.25)) +
   xlim(c(-2.5, 6.25)) +
   scale_size_manual(values = c(0.1, 2)) +
   scale_color_manual(values = c("gray80", "Orange2")) +
-    geom_hline(yintercept = 0) +
+  geom_hline(yintercept = 0) +
   geom_vline(xintercept = 0) +
   geom_abline(slope = 1, linetype = "dashed") +
-  ggrepel::geom_label_repel(label = ifelse(logFC_df$label == "yes",
-                       logFC_df$Gene,
-                       NA),
-      box.padding = unit(0.5, "lines"),
-      hjust = 0.25, max.overlaps = 100) +
+  ggrepel::geom_label_repel(
+    label = ifelse(logFC_df$label == "yes",
+                   logFC_df$Gene,
+                   NA),
+    box.padding = unit(0.5, "lines"),
+    hjust = 0.25,
+    max.overlaps = 100
+  ) +
   theme(legend.position = "none")
 ```
