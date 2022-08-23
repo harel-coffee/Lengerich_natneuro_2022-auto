@@ -15,7 +15,11 @@ knitr::opts_chunk$set(echo = TRUE)
 ```
 
 ```{r, include = FALSE}
-Packages <- c("dplyr", "Seurat", "aws.s3", "Matrix")
+Packages <- c("dplyr", 
+              "Seurat", 
+              "aws.s3", 
+              "Matrix",
+              "here")
 lapply(Packages, library, character.only = TRUE)
 
 mito.cutoff <- 7.5
@@ -40,7 +44,10 @@ CMOs <-
 
 ## Read in all 20 of the sample data sets
 ```{r}
-metadata <- read.csv("/inst/extdata/Study2_sample_metadata.csv")
+metadata <- read.csv(paste0(
+  here(), 
+  "/inst/extdata/Study2_sample_metadata.csv")
+)
 
 Pool1_samples <- c("TW01", "TW02", "TW03", "TW04", "TW05")
 

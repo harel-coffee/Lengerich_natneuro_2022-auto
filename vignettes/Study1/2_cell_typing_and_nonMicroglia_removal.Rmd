@@ -15,7 +15,12 @@ knitr::opts_chunk$set(echo = TRUE)
 ```
 
 ```{r}
-libraries <- c("aws.s3", "Seurat", "Matrix", "ggplot2", "dplyr")
+libraries <- c("aws.s3", 
+               "Seurat", 
+               "Matrix", 
+               "ggplot2", 
+               "dplyr",
+               "here")
 lapply(libraries, library, character.only = T)
 ```
 
@@ -63,13 +68,20 @@ markers <- FindAllMarkers(object)
 
 future::plan("sequential")
 
-write.csv(markers, "/inst/extdata/Study1_cluster_markers.csv")
+write.csv(markers,
+          file = paste0(
+            here(), 
+            "/inst/extdata/Study1_cluster_markers.csv")
+          )
 ```
 
 ```{r}
 markers <-
   read.csv(
-    "/inst/extdata/Study1_cluster_markers.csv",
+    paste0(
+      here(), 
+      "/inst/extdata/Study1_cluster_markers.csv"
+      ),
     row.names = 1,
     header = T
   )

@@ -21,7 +21,8 @@ libraries <-
     "Matrix",
     "ggplot2",
     "dplyr",
-    "RColorBrewer")
+    "RColorBrewer",
+    "here")
 lapply(libraries, library, character.only = T)
 
 `%notin%` <- Negate(`%in%`)
@@ -39,7 +40,11 @@ microglia <- readRDS("~/Study1_microglia.Rds")
 ```{r}
 DefaultAssay(microglia) <- "RNA"
 
-diss_stress <- read.csv("/inst/extdata/diss_stress.csv")
+diss_stress <-
+  read.csv(paste0(
+    here(), 
+    "/inst/extdata/diss_stress.csv")
+  )
 
 microglia <- microglia %>%
   NormalizeData(.) %>%
@@ -184,13 +189,20 @@ What genes define each of these clusters?
 ```{r, eval = FALSE}
 markers <-
   FindAllMarkers(microglia_subset, only.pos = T, min.pct = 0.25)
-write.csv(markers, file = "/inst/extdata/Study1_microglia_cluster_markers.csv")
+write.csv(markers,
+          file = paste0(
+            here(),
+            "/inst/extdata/Study1_microglia_cluster_markers.csv")
+          )
 ```
 
 ```{r}
 markers <-
   read.csv(
-    "/inst/extdata/Study1_microglia_cluster_markers.csv",
+    paste0(
+      here(),
+      "/inst/extdata/Study1_microglia_cluster_markers.csv"
+    ),
     header = T,
     row.names = 1
   )

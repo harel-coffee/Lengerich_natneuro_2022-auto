@@ -20,7 +20,8 @@ Packages <-
     "Seurat",
     "aws.s3",
     "Matrix",
-    "ggplot2")
+    "ggplot2",
+    "here")
 lapply(Packages, library, character.only = TRUE)
 
 set.seed(1234)
@@ -73,15 +74,25 @@ markers <- FindAllMarkers(integrated_object, only.pos = T)
 
 future::plan("default")
 
-write.csv(markers, file = "/inst/extdata/cluster_markers.csv")
+write.csv(
+  markers, 
+  file = paste0(
+    here(), 
+    "/inst/extdata/cluster_markers.csv")
+)
 ```
 
 ```{r}
 DefaultAssay(integrated_object) <- "RNA"
 markers <-
-  read.csv("/inst/extdata/cluster_markers.csv",
-           header = T,
-           row.names = 1)
+  read.csv(
+    file = paste0(
+      here(), 
+      "/inst/extdata/cluster_markers.csv"),
+    header = T,
+    row.names = 1
+    )
+
 top10 <-
   markers %>% 
   group_by(cluster) %>% 

@@ -34,7 +34,7 @@ lapply(Packages, library, character.only = TRUE)
 set.seed(1234)
 
 diss_stress <-
-  read.csv("/inst/extdata/diss_stress.csv",
+  read.csv(paste0(here(), "/inst/extdata/diss_stress.csv"),
            sep = ",",
            header = T)
 ```
@@ -114,7 +114,8 @@ microglia_Study2 <-
 
 ```
 
-We will combine these studies using integration, to remove any study-specific effects.
+We will combine these studies using integration, 
+to remove any study-specific effects.
 ```{r}
 microglia_Study1 <- NormalizeData(microglia_Study1)
 microglia_Study1 <- FindVariableFeatures(microglia_Study1)
@@ -142,19 +143,26 @@ Now we have a final object consisting of `r dim(combined)[2]` microglia.
 ```{r, eval=FALSE}
 DefaultAssay(combined) <- "RNA"
 
-combined <- combined %>% 
+combined <- combined %>%
   NormalizeData(.) %>%
   FindVariableFeatures(.) %>%
   ScaleData(.)
-  
+
 DefaultAssay(combined) <- "integrated"
 
 combined <- combined %>%
   ScaleData(.)
 
-PCA_features <- rownames(combined@assays$RNA@scale.data)[which(rownames(combined@assays$RNA@scale.data) %notin% diss_stress$symbol)]
-  
-combined <- combined %>%  
+PCA_features <-
+  rownames(combined@assays$RNA@scale.data)[
+    which(
+      rownames(
+        combined@assays$RNA@scale.data
+        ) %notin% diss_stress$symbol
+      )
+    ]
+
+combined <- combined %>%
   RunPCA(., features = PCA_features) %>%
   RunUMAP(., dims = 1:9) %>%
   FindNeighbors(., dims = 1:9) %>%
@@ -163,42 +171,55 @@ combined <- combined %>%
 combined$group <- paste0(combined$study, "_", combined$group)
 
 
-combined$group <- plyr::mapvalues(combined$group, 
-                                  from = unique(combined$group),
-                                  to = c("Study1_ATV4D9_day28",
-                                         "Study1_ATV4D9_day1",
-                                         "Study1_ATVRSV",
-                                         "Study1_ATV4D9_day7",
-                                         "Study1_ATV4D9_day14",
-                                         "Study2_WT_ATVDNP02",
-                                         "Study2_WT_ATV4D9",
-                                         "Study2_APPKI_ATVDNP02",
-                                         "Study2_APPKI_ATV4D9",
-                                         "Study2_APPKI_4D9"))
+combined$group <- plyr::mapvalues(
+  combined$group,
+  from = unique(combined$group),
+  to = c(
+    "Study1_ATV4D9_day28",
+    "Study1_ATV4D9_day1",
+    "Study1_ATVRSV",
+    "Study1_ATV4D9_day7",
+    "Study1_ATV4D9_day14",
+    "Study2_WT_ATVDNP02",
+    "Study2_WT_ATV4D9",
+    "Study2_APPKI_ATVDNP02",
+    "Study2_APPKI_ATV4D9",
+    "Study2_APPKI_4D9"
+  )
+)
 
-combined$group <- factor(combined$group, levels = c("Study1_ATVRSV",
-                                                    "Study1_ATV4D9_day1",
-                                                    "Study1_ATV4D9_day7",
-                                                    "Study1_ATV4D9_day14",
-                                                    "Study1_ATV4D9_day28",
-                                                    "Study2_WT_ATVDNP02",
-                                                    "Study2_WT_ATV4D9",
-                                                    "Study2_APPKI_ATVDNP02",
-                                                    "Study2_APPKI_4D9",
-                                                    "Study2_APPKI_ATV4D9"))
+combined$group <- factor(
+  combined$group,
+  levels = c(
+    "Study1_ATVRSV",
+    "Study1_ATV4D9_day1",
+    "Study1_ATV4D9_day7",
+    "Study1_ATV4D9_day14",
+    "Study1_ATV4D9_day28",
+    "Study2_WT_ATVDNP02",
+    "Study2_WT_ATV4D9",
+    "Study2_APPKI_ATVDNP02",
+    "Study2_APPKI_4D9",
+    "Study2_APPKI_ATV4D9"
+  )
+)
 
 saveRDS(combined, "~/atvTrem2_combined_objects/combined_object.Rds")
 
 
-clustercols = brewer.pal("Dark2", n = 6)[c(1,3:6)]
-combined$clusters <- plyr::mapvalues(combined$seurat_clusters,
-                                     from = c(0,1,2,3,4,5),
-                                     to = c("Homeostatic",
-                                            "Homeostatic",
-                                            "cluster2",
-                                            "cluster3",
-                                            "cluster4",
-                                            "cluster5"))
+clustercols <- brewer.pal("Dark2", n = 6)[c(1, 3:6)]
+combined$clusters <- plyr::mapvalues(
+  combined$seurat_clusters,
+  from = c(0, 1, 2, 3, 4, 5),
+  to = c(
+    "Homeostatic",
+    "Homeostatic",
+    "cluster2",
+    "cluster3",
+    "cluster4",
+    "cluster5"
+  )
+)
 ```
 
 ```{r, fig.width=5, fig.height=3.25}
@@ -221,7 +242,13 @@ DimPlot(
 ```
 
 ```{r, fig.width=10, fig.height=3.5}
-DimPlot(combined, split.by = "group", ncol = 5, group.by = "clusters",cols = clustercols) + NoAxes()
+DimPlot(
+  combined,
+  split.by = "group",
+  ncol = 5,
+  group.by = "clusters",
+  cols = clustercols
+) + NoAxes()
 ```
 
 ```{r, include=FALSE}
@@ -233,7 +260,9 @@ totals <-
 colnames(totals) <- c("cluster", "sample_id", "Count", "Percent")
 
 meta_slim <-
-  combined@meta.data %>% select(c(group, sample_id, study)) %>% distinct(.)
+  combined@meta.data %>%
+  select(c(group, sample_id, study)) %>%
+  distinct(.)
 
 totals <- totals %>%
   left_join(meta_slim, by = "sample_id")
@@ -248,7 +277,7 @@ ggplot(totals, aes(x = sample_id, y = Percent, fill = cluster)) +
   theme_bw() +
   scale_fill_manual(values = rev(brewer.pal("Dark2", n = 6)[c(1, 3:6)])) +
   coord_flip() +
-  facet_wrap( ~ group, scales = "free_y", ncol = 5)
+  facet_wrap(~group, scales = "free_y", ncol = 5)
 ```
 
 ```{r}
@@ -262,7 +291,8 @@ ggplot(totals, aes(x = group, y = Percent, fill = cluster)) +
   geom_bar(stat = "summary") +
   theme_bw() +
   scale_fill_manual(values = rev(clustercols)) +
-  coord_flip() + scale_y_continuous(expand = expansion())
+  coord_flip() +
+  scale_y_continuous(expand = expansion())
 ```
 
 ```{r, fig.width=6, fig.height=2}
@@ -271,7 +301,7 @@ ggplot(totals, aes(x = group, y = Percent, fill = cluster)) +
   theme_bw() +
   scale_fill_manual(values = rev(clustercols)) +
   coord_flip() +
-  facet_wrap( ~ study, scales = "free_y", ncol = 1)
+  facet_wrap(~study, scales = "free_y", ncol = 1)
 ```
 
 
@@ -334,10 +364,15 @@ FeaturePlot(
 
 ```{r}
 sample_annotation <-
-  combined@meta.data %>% select(c(group, sample_id)) %>% distinct(.)
+  combined@meta.data %>%
+  select(c(group, sample_id)) %>%
+  distinct(.)
 
 sample_annotation <-
-  sample_annotation %>% group_by(group) %>% dplyr::arrange(.by_group = T) %>% as.data.frame()
+  sample_annotation %>%
+  group_by(group) %>%
+  dplyr::arrange(.by_group = T) %>%
+  as.data.frame()
 rownames(sample_annotation) <- sample_annotation$sample_id
 
 sample_annotation_slim <- sample_annotation %>% dplyr::select(group)
@@ -375,14 +410,18 @@ chen_annotation_colors <- list(
 
 ```{r}
 chen_averages <-
-  AverageExpression(combined,
-                    features = rownames(chen_annotation),
-                    group.by = "sample_id")
+  AverageExpression(
+    combined,
+    features = rownames(chen_annotation),
+    group.by = "sample_id"
+  )
 
 chen_cluster_averages <-
-  AverageExpression(combined,
-                    features = rownames(chen_annotation),
-                    group.by = "seurat_clusters")
+  AverageExpression(
+    combined,
+    features = rownames(chen_annotation),
+    group.by = "seurat_clusters"
+  )
 ```
 
 ```{r, echo=FALSE, fig.width=6.5, fig.height=8}

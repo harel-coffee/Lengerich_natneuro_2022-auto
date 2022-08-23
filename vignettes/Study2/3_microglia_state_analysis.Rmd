@@ -22,7 +22,8 @@ Packages <-
     "Matrix",
     "ggplot2",
     "pheatmap",
-    "RColorBrewer")
+    "RColorBrewer",
+    "here")
 lapply(Packages, library, character.only = TRUE)
 
 `%notin%` <- Negate(`%in%`)
@@ -37,9 +38,14 @@ microglia_integrated <-
   readRDS("~/ATV-Trem2_APPKI_microglia_integrated.Rds")
 
 diss_stress <-
-  read.csv("/inst/extdata/diss_stress.csv",
-           sep = ",",
-           header = T)
+  read.csv(
+    file = paste0(
+      here(), 
+      "/inst/extdata/diss_stress.csv"),
+    sep = ",",
+    header = T
+  )
+    
 
 # refactor some covariates and rename
 microglia_integrated$group <-
@@ -273,13 +279,22 @@ microglia_integrated <- microglia_integrated %>%
 
 ```{r, include=FALSE, eval=FALSE}
 markers <- FindAllMarkers(microglia_integrated, only.pos = T)
-write.csv(markers, 
-          file = "/inst/extdata/microglia_cluster_markers.csv")
+write.csv(
+  markers, 
+  file = paste0(
+    here(), 
+    "/inst/extdata/microglia_cluster_markers.csv")
+)
 ```
 
 ```{r, include=FALSE}
-markers <- read.csv("/inst/extdata/microglia_cluster_markers.csv", 
-                    row.names = 1)
+markers <- read.csv(
+  file = paste0(
+    here(), 
+    "/inst/extdata/microglia_cluster_markers.csv"), 
+  row.names = 1
+  )
+
 top10 <-
   markers %>% 
   group_by(cluster) %>% 
@@ -317,10 +332,13 @@ but they might have inflammatory cytokine expression?
 ## Microglia state signatures
 ```{r, include=FALSE}
 
-signatures <- read.csv("
-/inst/extdata/state_signatures.csv",
-sep = ",",
-header = T)
+signatures <- read.csv(
+  file = paste0(
+    here(), 
+    "/inst/extdata/state_signatures.csv"),
+  sep = ",",
+  header = T
+)
 
 chen_sigs <- signatures %>% filter(collection == "ChenColonna2021")
 chen_sigs <- split(chen_sigs$symbol, chen_sigs$name)

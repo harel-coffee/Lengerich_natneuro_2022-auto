@@ -26,7 +26,8 @@ Packages <-
     "msigdbr",
     "fgsea",
     "sparrow",
-    "edgeR"
+    "edgeR",
+    "here"
   )
 lapply(Packages, library, character.only = TRUE)
 
@@ -225,7 +226,7 @@ logFC_df <- toptables_df %>%
 logFC_mat <- as.matrix(logFC_df %>% dplyr::select(-Gene))
 rownames(logFC_mat) <- logFC_df$Gene
 
-chen_sigs <- read.csv("/inst/extdata/state_signatures.csv") %>%
+chen_sigs <- read.csv(paste0(here(), "/inst/extdata/state_signatures.csv")) %>%
   dplyr::filter(collection == "ChenColonna2021") %>%
   dplyr::filter(symbol %in% logFC_df$Gene)
 
