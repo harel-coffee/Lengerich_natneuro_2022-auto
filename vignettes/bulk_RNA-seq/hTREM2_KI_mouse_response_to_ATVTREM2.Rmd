@@ -664,7 +664,7 @@ day4gs_stats <- day4gsea %>%
     transmute(name, n, NES, pval, padj, mean.logFC, mean.t, leadingEdge)
 
 day4gs_stats <- day4gs_stats %>% 
-  mutate(direction = ifelse(NES>0, "up", "down"))
+  mutate(direction = ifelse(NES > 0, "up", "down"))
 ```
 
 ```{r, message=FALSE, warning=FALSE}
@@ -704,7 +704,8 @@ day7gs_stats <- day7gsea %>%
     filter(padj < 0.05) %>% 
     transmute(name, n, NES, pval, padj, mean.logFC, mean.t, leadingEdge)
 
-day7gs_stats <- day7gs_stats %>% mutate(direction = ifelse(NES>0, "up", "down"))
+day7gs_stats <- day7gs_stats %>% 
+  mutate(direction = ifelse(NES > 0, "up", "down"))
 ```
 
 ```{r, message=FALSE, warning=FALSE}
@@ -758,7 +759,7 @@ gene_annotation <- data.frame(row.names = rownames(metabolism.counts),
 column_annotation <- data.frame(row.names = rownames(sample_annotation), 
                                 group = sample_annotation$group)
 
-annoCol<-list(pathway=c(OXPhos="Gray20", Glycolysis="Gray60"),
+annoCol <- list(pathway = c(OXPhos="Gray20", Glycolysis="Gray60"),
               group = c(Vehicle = "#1B9E77", 
                         ATV_DNP02 = "#D95F02", 
                         DNL919__mgkg10__days_01 = "#7570B3", 
@@ -770,7 +771,7 @@ annoCol<-list(pathway=c(OXPhos="Gray20", Glycolysis="Gray60"),
 pheatmap::pheatmap(mat = metabolism.counts,
                    cluster_rows = F,
                    cluster_cols = F,
-                   scale= "row",
+                   scale = "row",
                    gaps_row = c(15),
                    gaps_col = c(6, 14, 22, 30), 
                    show_colnames = F, 
@@ -799,7 +800,7 @@ allograft.counts <- norm.counts[allograft_gsea_genes[1:25],
 ##Change rownames to common gene symbols
 rownames(allograft.counts) <- gene_names[rownames(allograft.counts),2]
 
-annoCol2<-list(group = c(Vehicle = "#1B9E77", 
+annoCol2 <- list(group = c(Vehicle = "#1B9E77", 
                         ATV_DNP02 = "#D95F02", 
                         DNL919__mgkg10__days_01 = "#7570B3", 
                         DNL919__mgkg10__days_04 = "#E7298A",
@@ -810,7 +811,7 @@ annoCol2<-list(group = c(Vehicle = "#1B9E77",
 pheatmap::pheatmap(mat = allograft.counts,
                    cluster_rows = T,
                    cluster_cols = F,
-                   scale= "row",
+                   scale = "row",
                    gaps_col = c(6, 14, 22, 30), 
                    show_colnames = F, 
                    treeheight_row = 0,
@@ -837,7 +838,7 @@ G2M.counts <- norm.counts[G2M_gsea_genes[1:25], rownames(sample_annotation)]
 ##Change rownames to common gene symbols
 rownames(G2M.counts) <- gene_names[rownames(G2M.counts),2]
 
-annoCol2<-list(group = c(Vehicle = "#1B9E77", 
+annoCol2 <- list(group = c(Vehicle = "#1B9E77", 
                         ATV_DNP02 = "#D95F02", 
                         DNL919__mgkg10__days_01 = "#7570B3", 
                         DNL919__mgkg10__days_04 = "#E7298A",
@@ -848,7 +849,7 @@ annoCol2<-list(group = c(Vehicle = "#1B9E77",
 pheatmap::pheatmap(mat = G2M.counts,
                    cluster_rows = T,
                    cluster_cols = F,
-                   scale= "row",
+                   scale = "row",
                    gaps_col = c(6, 14, 22, 30), 
                    show_colnames = F, 
                    treeheight_row = 0,
@@ -1005,7 +1006,7 @@ ggplot(selected_counts, aes(x = group, y = Tspo)) +
   theme(legend.position = "none", axis.title.x = element_blank()) +
   labs(y = "log2 (cpm + 1)") + 
   ggtitle("Tspo") +
-  coord_cartesian(ylim=c(5,9))
+  coord_cartesian(ylim = c(5,9))
 ```
 
 ```{r, fig.width=4.5, fig.height=2.75, message=FALSE, warning=FALSE}
@@ -1021,6 +1022,6 @@ ggplot(selected_counts, aes(x = group, y = Tspo)) +
   theme(legend.position = "none", axis.title.x = element_blank()) +
   labs(y = "log2 (cpm + 1)") + 
   ggtitle("Tspo") +
-  coord_cartesian(ylim=c(5,9)) +
+  coord_cartesian(ylim = c(5,9)) +
   facet_wrap(~sex)
 ```
