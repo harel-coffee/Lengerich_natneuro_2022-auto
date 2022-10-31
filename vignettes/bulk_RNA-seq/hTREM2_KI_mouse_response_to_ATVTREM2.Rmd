@@ -15,9 +15,6 @@ knitr::opts_chunk$set(echo = TRUE)
 ```
 
 ```{r,message=FALSE, warning=FALSE}
-bucket <- "com-dnli-ngs/10x-data/NGS000072/alevin-fry/analysis/knee-quants"
-object <- "mouse_hTREM2_KI_bulk-rna-seq.rds"
-
 library(FacileBiocData)
 library(FacileAnalysis)
 library(FacileIncubator)
@@ -27,13 +24,12 @@ library(tidyverse)
 library(tidyr)
 library(pheatmap)
 library(ggplot2)
+library(here)
 ```
 
 ```{r, message=FALSE, warning=FALSE}
 # Read in the data
-DGEList <- aws.s3::s3readRDS(bucket = bucket, 
-                             object = object, 
-                             region = "us-east-1")
+DGEList <- readRDS(here("inst/exdata/mouse_hTREM2_KI_bulk-rna-seq.rds"))
 gene.all <- DGEList$genes
 prot.genes <- gene.all %>% filter(meta == "protein_coding")
 
