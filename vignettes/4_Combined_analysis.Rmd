@@ -458,3 +458,31 @@ pheatmap::pheatmap(
   color = rev(colorRampPalette(RColorBrewer::brewer.pal(11, "RdBu"))(256))
 )
 ```
+
+```{r, fig.width=10, fig.height=6}
+genes_to_plot <-
+  c(
+    "Tmem119",
+    "Cst7",
+    "Pcna",
+    "Ifitm3",
+    "Apoe",
+    "Ccl4",
+    "Lpl",
+    "Aldoa",
+    "Cd74",
+    "Axl",
+    "Aif1",
+    "Gpnmb"
+  )
+
+
+FeaturePlot(combined, 
+            genes_to_plot, 
+            ncol = 4, 
+            order = F, 
+            min.cutoff = 0, 
+            raster = T) &
+  NoAxes() &
+  viridis::scale_color_viridis()
+```
