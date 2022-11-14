@@ -1,0 +1,21 @@
+
+Package: Lengerich_natneuro_2022
+Title: Analysis of transcriptomic and morphology data for Lengerich et al, 2022
+Version: 0.0.0.9000
+Authors@R: 
+    person("David", "Tatarakis", , "tatarakis@dnli.com", role = c("aut", "cre"))
+    person("David", "Joy", ,"djoy@dnli.com", role = "aut")
+Description: What the package does (one paragraph).
+License: Apache License (>= 2)
+Encoding: UTF-8
+Roxygen: list(markdown = TRUE)
+RoxygenNote: 7.2.0
+Imports: 
+    aws.s3,
+    checkmate,
+    dplyr,
+    ggplot2,
+    ggrepel,
+    magrittr,
+    Matrix,
+    Seurat
