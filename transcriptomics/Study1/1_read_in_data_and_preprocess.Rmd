@@ -57,10 +57,8 @@ objects <- lapply(
   samples,
   FUN = function(x) {
     object <- Seurat::Read10X(
-      paste0(
-        "Study1/cellranger_7.0.0/",
-        x,
-        "/outs/filtered_feature_bc_matrix"
+      file.path(
+        "Study1", "cellranger_7.0.0", x, "outs", "filtered_feature_bc_matrix"
       ),
       project = "atv_trem2_timecourse"
     ) 

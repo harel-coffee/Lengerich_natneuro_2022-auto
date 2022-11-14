@@ -74,10 +74,9 @@ pool4 <- list()
 # Read in Pool 1 data sets
 for (i in 1:length(Pool1_samples)) {
   object <- Seurat::Read10X(
-    paste0(
-      "/pool1/outs/per_sample_outs/",
-      Pool1_samples[i],
-      "/count/sample_filtered_feature_bc_matrix"
+    file.path(
+      "pool1", "outs", "per_sample_outs", Pool1_samples[i], "count",
+      "sample_filtered_feature_bc_matrix"
     ),
     min.cells = 3,
     min.features = 50,
