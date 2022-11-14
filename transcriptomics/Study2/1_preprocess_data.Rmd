@@ -107,12 +107,10 @@ for (i in 1:length(Pool1_samples)) {
 # Read in Pool 2 data sets
 for (i in 1:length(Pool2_samples)) {
   object <- Seurat::Read10X(
-    paste0(
-      "/pool2/outs/per_sample_outs/",
-      Pool1_samples[i],
-      "/count/sample_filtered_feature_bc_matrix"
+    file.path(
+      "pool1", "outs", "per_sample_outs", Pool2_samples[i], "count",
+      "sample_filtered_feature_bc_matrix"
     ),
-    region = "us-east-1",
     min.cells = 3,
     min.features = 50,
     project = paste0("ATV:Trem2_APPKI_", Pool2_samples[i])
@@ -141,13 +139,11 @@ for (i in 1:length(Pool2_samples)) {
 
 # Read in Pool 3 data sets
 for (i in 1:length(Pool3_samples)) {
-  object <- Seurat::Read10X(
-    paste0(
-      "/pool1/outs/per_sample_outs/",
-      Pool1_samples[i],
-      "/count/sample_filtered_feature_bc_matrix"
+object <- Seurat::Read10X(
+    file.path(
+      "pool1", "outs", "per_sample_outs", Pool3_samples[i], "count",
+      "sample_filtered_feature_bc_matrix"
     ),
-    region = "us-east-1",
     min.cells = 3,
     min.features = 50,
     project = paste0("ATV:Trem2_APPKI_", Pool3_samples[i])
@@ -176,13 +172,11 @@ for (i in 1:length(Pool3_samples)) {
 
 # Read in Pool 4 data sets
 for (i in 1:length(Pool4_samples)) {
-  object <- Seurat::Read10X(
-    paste0(
-      "/pool1/outs/per_sample_outs/",
-      Pool4_samples[i],
-      "/count/sample_filtered_feature_bc_matrix"
+object <- Seurat::Read10X(
+    file.path(
+      "pool1", "outs", "per_sample_outs", Pool4_samples[i], "count",
+      "sample_filtered_feature_bc_matrix"
     ),
-    region = "us-east-1",
     min.cells = 3,
     min.features = 50,
     project = paste0("ATV:Trem2_APPKI_", Pool4_samples[i])
