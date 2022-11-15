@@ -77,7 +77,13 @@ SUFFIX = '.png'
 
 
 def parse_lpl_treatment(filename: str) -> pd.Series:
-    """ Parse the treatment from the filename """
+    """ Parse the treatment from the filename
+
+    :param str filename:
+        Name of the image file
+    :returns:
+        The experimental data for that file
+    """
 
     re_sections = [
         re.compile(r'''^
@@ -102,7 +108,13 @@ def parse_lpl_treatment(filename: str) -> pd.Series:
 
 
 def parse_axl_treatment(filename: str) -> pd.Series:
-    """ Parse the animal id """
+    """ Parse the animal id
+
+    :param str filename:
+        Name of the image file
+    :returns:
+        The experimental data for that file
+    """
     reFILENAME = re.compile(r'''^
         lng_[0-9]+_mnf_[0-9]+_nh(?P<animal_id>[0-9]+)_[0-9]+
     $''', re.IGNORECASE | re.VERBOSE)
@@ -137,6 +149,8 @@ def load_and_qc_data(indir: pathlib.Path,
 
     :param Path indir:
         Directory to load all the metadata from
+    :param int iba1_channel:
+        Which channel in the sequence contains the Iba1 stain
     :returns:
         The merged and QC'ed data frame
     """
@@ -580,27 +594,32 @@ def plot_axl_single_cell(suffix: str = SUFFIX):
 
 def parse_args(args=None):
     parser = argparse.ArgumentParser()
-    parser.add_argument('study', choices=(
-                            'morpho', 'morphology',
-                            'cd74', 'int_cd74',
-                            'axl', 'int_axl',
-                        ),
-                        help='Which study to plot (one of "morpho", "cd74", "axl")')
+    parser.add_argument(
+        'studies',
+        choices=(
+            'morpho', 'morphology',
+            'cd74', 'int_cd74',
+            'axl', 'int_axl',
+            ),
+        nargs='+',
+        help='Which study to plot (any or multiple of "morpho", "cd74", "axl")',
+    )
     return parser.parse_args(args=args)
 
 
 def main(args=None):
     args = parse_args(args=args)
-    study = args.study.lower().strip().replace(' ', '_')
+    for study in args.studies:
+        study = study.lower().strip().replace(' ', '_')
 
-    if study in ('morpho', 'morphology'):
-        plot_morphology_single_cell()
-    elif study in ('cd74', 'int_cd74'):
-        plot_cd74_single_cell()
-    elif study in ('axl', 'int_axl'):
-        plot_axl_single_cell()
-    else:
-        raise KeyError(f'Unknown study "{study}"')
+        if study in ('morpho', 'morphology'):
+            plot_morphology_single_cell()
+        elif study in ('cd74', 'int_cd74'):
+            plot_cd74_single_cell()
+        elif study in ('axl', 'int_axl'):
+            plot_axl_single_cell()
+        else:
+            raise KeyError(f'Unknown study "{study}"')
 
 
 if __name__ == '__main__':

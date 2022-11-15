@@ -1693,13 +1693,13 @@ class SingleCellMorphoPipeline(object):
             fold_change_df_down = fold_change_df_down.iloc[is_sig_down, :]
             fold_change_df_down = fold_change_df_down.sort_values(
                 ['Log10P', 'Difference'], ascending=[False, True])
-            label_features.update(fold_change_df_down['Feature'][:label_top_k_down])
+            label_features.update(fold_change_df_down['Feature'].iloc[:label_top_k_down])
         if label_top_k_up > 0 and np.any(is_sig_up):
             fold_change_df_up = fold_change_df[['Difference', 'Log10P', 'Feature']]
             fold_change_df_up = fold_change_df_up.iloc[is_sig_up, :]
             fold_change_df_up = fold_change_df_up.sort_values(
                 ['Log10P', 'Difference'], ascending=[False, False])
-            label_features.update(fold_change_df_up['Feature'][:label_top_k_up])
+            label_features.update(fold_change_df_up['Feature'].iloc[:label_top_k_up])
 
         # Force the plot to be symmetrical about zero
         min_difference = np.min(difference)

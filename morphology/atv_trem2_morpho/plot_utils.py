@@ -150,8 +150,10 @@ def plot_boxes(df: pd.DataFrame,
     elif isinstance(figsize, (int, float)):
         figsize = (figsize_x, figsize)
 
-    if fill_color in (None, ''):
+    if fill_color in (None, '') and hue_var_name is not None:
         color_kwargs = {'palette': palette}
+    elif fill_color in (None, ''):
+        color_kwargs = {'color': '#E9E9E9'}
     else:
         color_kwargs = {'color': fill_color}
 
@@ -192,14 +194,16 @@ def plot_boxes(df: pd.DataFrame,
                            linewidth=linewidth, width=boxplot_width,
                            **color_kwargs)
         elif plot_style in ('bar', 'bars'):
-            if fill_color in (None, ''):
+            if fill_color in (None, '') and hue_var_name is not None:
                 color_kwargs = {'palette': palette}
+            elif fill_color in (None, ''):
+                color_kwargs = {'facecolor': '#E9E9E9'}
             else:
                 color_kwargs = {'facecolor': fill_color}
             sns.barplot(data=df, x=var_name, hue=hue_var_name, y=value_name, ax=ax,
                         order=order, hue_order=hue_order, dodge=False,
                         linewidth=linewidth, edgecolor=edge_color,
-                        ci=err_bar_ci,
+                        errorbar=('ci', err_bar_ci),
                         errwidth=linewidth,
                         capsize=capsize,
                         error_kw={
@@ -219,7 +223,7 @@ def plot_boxes(df: pd.DataFrame,
         elif plot_style in ('line', 'lines'):
             sns.lineplot(data=df, x=var_name, hue=hue_var_name, y=value_name, ax=ax,
                          hue_order=hue_order, err_style='band',
-                         ci=err_bar_ci,
+                         errorbar=('ci', err_bar_ci),
                          linewidth=linewidth*2, palette=palette)
         elif plot_style in ('err', 'err_bar', 'err_bars'):
             if hue_var_name is None:
@@ -229,16 +233,21 @@ def plot_boxes(df: pd.DataFrame,
             sns.pointplot(data=df, x=var_name, hue=hue_var_name, y=value_name, ax=ax,
                           order=order, hue_order=hue_order, dodge=False, errwidth=linewidth*2, scale=0.5,
                           capsize=capsize, linewidth=linewidth*2, join=err_bar_join,
-                          ci=err_bar_ci,
+                          errorbar=('ci', err_bar_ci),
                           markers='_', linestyles='-', **color_kwargs)
         else:
             raise KeyError(f'Unknown plot_style "{plot_style}"')
 
         # Plot the raw observations
         if showfliers:
+            if hue_var_name is not None:
+                color_kwargs = {'palette': palette}
+            else:
+                color_kwargs = {}
             sns.stripplot(data=df, x=var_name, y=value_name, hue=hue_var_name, dodge=True,
-                          order=order, hue_order=hue_order, palette=palette, size=fliers_size,
-                          edgecolor=edge_color, linewidth=linewidth, clip_on=False)
+                          order=order, hue_order=hue_order, size=fliers_size,
+                          edgecolor=edge_color, linewidth=linewidth, clip_on=False,
+                          **color_kwargs)
     if ylim is not None:
         ax.set_ylim(ylim)
     if xlim is not None:
